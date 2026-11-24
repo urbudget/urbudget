@@ -159,6 +159,9 @@ try {
     // Until its owner adds it.
     await b.call("sync_enable", { enabled: true, ids: [kept] }); await wake(b); await wake(b); await wake(a); await wake(a);
     assert.deepEqual(await names(a), ["A sample to explore", ...shared]);
+    // Each of them can see which devices sync with the account, itself first.
+    const mine = (await b.call("sync_devices")).devices;
+    assert.deepEqual(mine.map(d => [d.name, d.current]), [["second", true], ["first", false]]); assert.ok(mine.every(d => d.addedAt && d.lastSeenAt));
     // The server handed the sealed key out once.
     await assert.rejects(c.call("sync_unlock", { secret: offered.code }), /expired or was already used/);
     const withdrawn = await a.call("sync_pair_offer"); await a.call("sync_pair_cancel", { id: withdrawn.id });

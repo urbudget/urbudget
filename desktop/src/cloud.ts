@@ -114,11 +114,15 @@ export const cloud = {
     invoke<SyncReport>("sync_resolve", { id, keep, openClean, choices: choices ?? null, review: review ?? null }),
   syncRemove: (id: string) => invoke<void>("sync_remove", { id }),
   syncLock: () => invoke<void>("sync_lock"),
+  /** The devices that sync with the account, this computer first. */
+  syncDevices: () => invoke<{ devices: SyncDevice[] }>("sync_devices"),
 };
 
 export type SyncKeyInfo = { exists: boolean; secret: "code" | "passphrase" | null; recovery: boolean; protocol: number };
 /** Sync was set up, unlocked or reset here. `recoveryCode` when that made a recovery code for the person to keep. */
 export type SyncUnlocked = { created: boolean; protocol?: number; recoveryCode?: string };
+/** A device that syncs with the account. `name` is null for one that registered before devices sent theirs, and `lastSeenAt` until it has synced. */
+export type SyncDevice = { id: string; name: string | null; addedAt: string; lastSeenAt: string | null; current: boolean };
 /** A one-time code: its 24 characters, and the same as a QR code's squares row by row ("1" is dark). */
 export type PairingCode = { id: string; code: string; qr: { size: number; modules: string }; expiresAt: string };
 

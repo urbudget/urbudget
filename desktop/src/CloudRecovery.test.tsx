@@ -42,6 +42,7 @@ beforeEach(() => {
     sync_pair_request: { id: "asked", code: "ZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZ", qr: { size: 3, modules: "101010101" }, expiresAt: new Date(Date.now() + 5 * 60_000).toISOString() },
     sync_pair_wait: { ready: false },
     sync_pair_cancel: null,
+    sync_devices: { devices: [] },
   };
   native.invoke.mockImplementation(async (command: string) => {
     if (command === "cloud_status") return status;
@@ -234,6 +235,7 @@ it("leaves sync as it is when a reset fails", async () => {
 });
 
 it("says which secret opens the budgets, for either kind of account", async () => {
+  // Under More once sync is on, where it takes no room until it's wanted.
   status = unlocked();
   const first = render(view(state()));
   expect(await screen.findByText(/only your devices and your recovery code can open them/)).toBeTruthy();

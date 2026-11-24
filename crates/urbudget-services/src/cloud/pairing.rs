@@ -51,7 +51,7 @@ pub(super) fn belongs_on_a_syncing_device() -> String {
 }
 
 /// What the server said, in the app's language, without the code it leads with.
-pub(super) fn told(error: String) -> String {
+pub fn told(error: String) -> String {
     if error.starts_with("OFFLINE:") {
         return offline();
     }

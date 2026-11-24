@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Cloud as CloudIcon, CloudOff, Copy, LoaderCircle, Lock, Plus, RefreshCw } from "lucide-react";
-import { cloud, type BudgetSync, type Cloud, type Overview, type PairingCode, type SyncKeyInfo, type SyncUnlocked } from "./cloud";
+import { cloud, type BudgetSync, type Cloud, type Overview, type PairingCode, type SyncDevice, type SyncKeyInfo, type SyncUnlocked } from "./cloud";
 import { errorText, formatDate } from "./format";
 import { Modal } from "./forms";
 import { SyncConflicts } from "./SyncConflicts";
 import { useToast } from "./ui";
-import { localDateTime, msg, t, tn } from "./i18n";
+import { localDate, localDateTime, msg, t, tc, tn } from "./i18n";
 import "./cloud.css";
 
 /** "just now", "5 minutes ago", "3 hours ago", or the date. */
@@ -616,18 +616,27 @@ function MoveToNewSync({ cloud: state }: { cloud: Cloud }) {
   );
 }
 
-/** Settings › Account & sync. */
+/** Budgets that sync with nothing for anyone to do: counted, not listed. */
+const SYNCING: readonly string[] = ["synced", "uploaded", "downloaded", "merged", "waiting", "queued"];
+/** Budgets with nothing to do from this page: the budget library has them. */
+const SHELVED: readonly string[] = ["trashed", "purged", "evicted"];
+
+/** Settings › Account & sync: the account, the plan when it needs something, sync, the devices
+ *  that sync, the budgets that need someone, and what few people need under More. */
 export function SyncSettings({
   cloud: state,
   openBudget,
   budgetId,
   isClean,
+  manageBudgets,
 }: {
   cloud: Cloud;
   budgetId: string;
   /** The open budget has no unsaved edits. */
   isClean: () => boolean;
   openBudget: (id: string) => Promise<void>;
+  /** Opens the budget library, where every budget is listed. */
+  manageBudgets?: () => void;
 }) {
   const toast = useToast();
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -639,6 +648,10 @@ export function SyncSettings({
   const [recoveryCode, setRecoveryCode] = useState("");
   const [busyId, setBusyId] = useState("");
   const [reviewing, setReviewing] = useState<BudgetSync | null>(null);
+  /** The devices that sync with the account, this computer first. Null until they're known. */
+  const [devices, setDevices] = useState<SyncDevice[] | null>(null);
+  const [devicesError, setDevicesError] = useState("");
+  const devicesRequest = useRef(0);
   const status = state.status;
   const email = status?.email;
   const currentEmail = useRef(email);
@@ -673,6 +686,29 @@ export function SyncSettings({
     return () => { left = true; };
   }, [email, unsaved]);
 
+  const report = status?.sync.last ?? null;
+  const subscribed = overview?.sync.active ?? report?.state === "ok";
+  /** Where the page is: signed out, the account couldn't be read, still reading it, no plan,
+   *  sync off or locked on this computer, or sync on. */
+  const phase = !email ? "out" : overviewError && !overview ? "error" : !overview && !report ? "loading" : !subscribed ? "plan" : !status?.sync.unlocked ? "locked" : "on";
+  const on = phase === "on";
+  // The list is asked for while sync is on here, and again after a device is added.
+  const loadDevices = useCallback(() => {
+    if (!on || !email) return;
+    const request = ++devicesRequest.current;
+    setDevicesError("");
+    void cloud.syncDevices().then(
+      (answer) => { if (request === devicesRequest.current) setDevices(answer.devices); },
+      (e) => { if (request === devicesRequest.current) setDevicesError(errorText(e)); },
+    );
+  }, [on, email]);
+  useEffect(() => {
+    setDevices(null);
+    setDevicesError("");
+    loadDevices();
+    return () => { devicesRequest.current++; };
+  }, [loadDevices]);
+
   if (!status)
     return (
       <section className="panel">
@@ -680,8 +716,9 @@ export function SyncSettings({
         <LoaderCircle size={16} className="spin" />
       </section>
     );
-  const report = status.sync.last;
-  const subscribed = overview?.sync.active ?? report?.state === "ok";
+  const older = status.sync.protocol !== 2;
+  const plan = overview?.subscription ?? null;
+  const manageAccount = () => void cloud.open("/account/").catch(fail);
   const act = async (id: string, work: () => Promise<unknown>) => {
     setBusyId(id);
     try {
@@ -748,6 +785,15 @@ export function SyncSettings({
       },
     });
 
+  /** A budget is listed when it needs someone, or has something to tell them. One that is
+   *  simply syncing is counted instead, and one in Trash or left online is the library's. */
+  const listed = (b: BudgetSync) =>
+    SYNCING.includes(b.state) ? !!b.message || !!b.notes?.length : SHELVED.includes(b.state) ? false : b.state === "cloud_only" ? older : true;
+  const budgets = on ? (report?.budgets ?? []) : [];
+  const needing = budgets.filter(listed);
+  const quiet = budgets.filter((b) => SYNCING.includes(b.state) && !listed(b));
+  const counted = tn(quiet.length, "{count} budget is syncing.", "{count} budgets are syncing.");
+
   const budgetRow = (b: BudgetSync) => (
     <div className="setting-row sync-budget" key={b.id}>
       <span>
@@ -782,7 +828,7 @@ export function SyncSettings({
             {t("Sync this budget")}
           </button>
         )}
-        {status.sync.protocol !== 2 && b.state === "cloud_only" && (
+        {older && b.state === "cloud_only" && (
           <button
             className="secondary"
             disabled={!!busyId}
@@ -839,7 +885,13 @@ export function SyncSettings({
             </button>
           </>
         )}
-        {status.sync.protocol !== 2 && ["synced", "uploaded", "downloaded", "merged", "waiting", "conflict", "cloud_only", "error"].includes(b.state) && (
+        {/* A kept copy is recovered, and a deletion reviewed, in the budget library. */}
+        {manageBudgets && (b.state === "recovery" || b.state === "deletion_conflict") && (
+          <button className="secondary" disabled={!!busyId} onClick={manageBudgets}>
+            {t("Manage budgets…")}
+          </button>
+        )}
+        {older && ["synced", "uploaded", "downloaded", "merged", "waiting", "conflict", "cloud_only", "error"].includes(b.state) && (
           <button
             className="link-button"
             disabled={!!busyId}
@@ -860,44 +912,70 @@ export function SyncSettings({
     </div>
   );
 
+  const deviceRow = (d: SyncDevice) => (
+    <li className="setting-row" key={d.id}>
+      <span>
+        <strong>{d.name || (d.current ? t("This computer") : t("A device added on {date}", { date: localDate(new Date(d.addedAt), { day: "numeric", month: "long" }) }))}</strong>
+        {d.current ? d.name && <small>{t("This computer")}</small> : d.lastSeenAt && <small>{t("Last synced {time}", { time: ago(d.lastSeenAt) })}</small>}
+      </span>
+    </li>
+  );
+
+  /** What sync does and which secret opens the budgets: said before sync is on, and kept under More after. */
+  const about =
+    status.sync.secret === "passphrase"
+      ? t("Keeps your budgets the same on all your devices. End-to-end encrypted: they're encrypted on your computer before upload, and only your devices and your sync passphrase can open them. $3/month, cancel anytime.")
+      : t("Keeps your budgets the same on all your devices. End-to-end encrypted: they're encrypted on your computer before upload, and only your devices and your recovery code can open them. $3/month, cancel anytime.");
+  /** Sync's one line while it's on: that it is and when it last ran, or what it's waiting for. */
+  const trouble = report?.state === "error" || report?.state === "attention";
+  const line = !report
+    ? t("Sync is on.")
+    : report.state === "ok"
+      ? t("Sync is on. Last synced {when}.", { when: ago(report.at) })
+      : report.state === "offline"
+        ? t("Offline. Sync picks up when you're back online.")
+        : report.state === "locked"
+          ? t("Unlock sync on this computer to sync.")
+          : report.message
+            ? report.message
+            : report.state === "waiting"
+              ? t("Sync is on. Changes are waiting to sync.")
+              : report.state === "attention" && needing.length
+                ? tn(needing.length, "Sync is on. {count} budget needs you.", "Sync is on. {count} budgets need you.")
+                : t("Sync couldn't finish.");
+
   return (
     <>
       <section className="panel">
         <h2>{t("Account")}</h2>
         {status.email ? (
-          <div className="setting-list">
-            <div className="setting-row">
-              <span>
-                <strong>{t("Signed in as {email}", { email: status.email })}</strong>
-                <small>
-                  {status.credentialStore
-                    ? t("The sign-in is kept in {store}.", { store: status.credentialStore })
-                    : t("You'll sign in again next time you open UrBudget.")}
-                </small>
-              </span>
-              <span className="sync-actions">
-                <button className="secondary" onClick={() => void cloud.open("/account/").catch(fail)}>
-                  {t("Manage account")}
-                </button>
-                <DeleteAccount cloud={state} />
-                <button
-                  className="secondary"
-                  onClick={() =>
-                    setConfirm({
-                      title: t("Sign out of UrBudget?"),
-                      text: <p>{t("Sync stops on this computer and it forgets the sync key. Your budgets here stay as they are.")}</p>,
-                      label: t("Sign out"),
-                      action: async () => {
-                        state.setStatus(await cloud.signOut());
-                        setOverview(null);
-                      },
-                    })
-                  }
-                >
-                  {t("Sign out")}
-                </button>
-              </span>
-            </div>
+          <div className="setting-row">
+            <span>
+              <strong>{t("Signed in as {email}", { email: status.email })}</strong>
+              <small>
+                {status.credentialStore
+                  ? t("The sign-in is kept in {store}.", { store: status.credentialStore })
+                  : t("You'll sign in again next time you open UrBudget.")}
+              </small>
+            </span>
+            <span className="sync-actions">
+              <button
+                className="link-button"
+                onClick={() =>
+                  setConfirm({
+                    title: t("Sign out of UrBudget?"),
+                    text: <p>{t("Sync stops on this computer and it forgets the sync key. Your budgets here stay as they are.")}</p>,
+                    label: t("Sign out"),
+                    action: async () => {
+                      state.setStatus(await cloud.signOut());
+                      setOverview(null);
+                    },
+                  })
+                }
+              >
+                {t("Sign out")}
+              </button>
+            </span>
           </div>
         ) : (
           <>
@@ -907,45 +985,15 @@ export function SyncSettings({
         )}
       </section>
 
-      <section className="panel sync-panel">
-        {status.email && status.sync.protocol !== 2 && status.sync.upgradeAvailable && <MoveToNewSync cloud={state} />}
-        <div className="panel-title">
-          <h2>
-            <CloudIcon size={18} /> {t("Sync")}
-          </h2>
-          {status.email && status.sync.unlocked && subscribed && (
-            <span className="sync-actions">
-              <button className="secondary" onClick={() => setAdding(true)}>
-                <Plus size={14} /> {t("Add a device")}
-              </button>
-              <button className="secondary" disabled={state.syncing} onClick={() => void state.syncNow()}>
-                <RefreshCw size={14} className={state.syncing ? "spin" : ""} /> {t("Sync now")}
-              </button>
-            </span>
-          )}
-        </div>
-        <p className="help">
-          {status.sync.secret === "passphrase"
-            ? t("Keeps your budgets the same on all your devices. End-to-end encrypted: they're encrypted on your computer before upload, and only your devices and your sync passphrase can open them. $3/month, cancel anytime.")
-            : t("Keeps your budgets the same on all your devices. End-to-end encrypted: they're encrypted on your computer before upload, and only your devices and your recovery code can open them. $3/month, cancel anytime.")}
-        </p>
-        {!status.email ? (
-          <p className="muted">{t("Sign in above to use sync.")}</p>
-        ) : overviewError && !overview ? (
-          <p className="notice error">
-            <CloudOff size={14} /> <span>{overviewError}</span>
-            <button className="secondary" onClick={loadOverview}>
-              {t("Try again")}
-            </button>
-          </p>
-        ) : !overview && !report ? (
-          <LoaderCircle size={16} className="spin" />
-        ) : !subscribed ? (
+      {/* The plan takes room only when there's something to do or to know about it. */}
+      {phase === "plan" ? (
+        <section className="panel">
+          <h2>{tc("subscription", "Plan")}</h2>
           <div className="plan-offer">
             <div>
               <strong className="plan-price">{t("$3 a month")}</strong>
               <small>
-                {overview?.subscription?.status === "canceled"
+                {plan?.status === "canceled"
                   ? t("Your sync plan has ended. Subscribe again to pick up where you left off.")
                   : t("Subscribe on urbudget.app, then come back here.")}
               </small>
@@ -959,68 +1007,167 @@ export function SyncSettings({
               </button>
             </span>
           </div>
-        ) : !status.sync.unlocked ? (
+        </section>
+      ) : (
+        (phase === "locked" || on) &&
+        (plan?.endsAt || plan?.status === "past_due") && (
+          <section className="panel">
+            <h2>{tc("subscription", "Plan")}</h2>
+            <div className="sync-status">
+              <span>
+                {plan.endsAt
+                  ? t("Your plan ends on {date}.", { date: formatDate(plan.endsAt.slice(0, 10)) })
+                  : t("The last payment didn't go through; sync keeps working while it's retried. Update your card under Manage account.")}
+              </span>
+              <span className="sync-actions">
+                <button className="secondary" onClick={manageAccount}>
+                  {t("Manage account")}
+                </button>
+              </span>
+            </div>
+          </section>
+        )
+      )}
+
+      <section className="panel sync-panel">
+        {status.email && older && status.sync.upgradeAvailable && <MoveToNewSync cloud={state} />}
+        <div className="panel-title">
+          <h2>
+            <CloudIcon size={18} /> {t("Sync")}
+          </h2>
+        </div>
+        {(phase === "out" || phase === "plan") && <p className="help">{about}</p>}
+        {phase === "out" ? (
+          <p className="muted">{t("Sign in above to use sync.")}</p>
+        ) : phase === "error" ? (
+          <p className="notice error">
+            <CloudOff size={14} /> <span>{overviewError}</span>
+            <button className="secondary" onClick={loadOverview}>
+              {t("Try again")}
+            </button>
+          </p>
+        ) : phase === "loading" ? (
+          <LoaderCircle size={16} className="spin" />
+        ) : phase === "locked" ? (
           <UnlockSync cloud={state} onDone={unlockedHere} reset={() => askReset(true)} />
         ) : (
-          <>
-            {overview?.subscription && (
-              <p className="muted plan-line">
-                {overview.subscription.endsAt
-                  ? t("Your plan ends on {date}.", { date: formatDate(overview.subscription.endsAt.slice(0, 10)) })
-                  : overview.subscription.status === "past_due"
-                    ? t("The last payment didn't go through; sync keeps working while it's retried. Update your card under Manage account.")
-                    : overview.subscription.renewsAt
-                      ? t("Renews on {date}.", { date: formatDate(overview.subscription.renewsAt.slice(0, 10)) })
-                      : ""}
-              </p>
-            )}
-            {report && report.state !== "ok" && (
-              <p className="notice">
-                <span>
-                  {report.state === "offline"
-                    ? t("Offline. Sync picks up when you're back online.")
-                    : report.state === "locked"
-                      ? t("Unlock sync on this computer to sync.")
-                      : report.message ?? t("Sync couldn't finish.")}
-                </span>
-              </p>
-            )}
-            <div className="setting-list">{report?.budgets.map(budgetRow)}</div>
-            {report?.state === "ok" && <p className="muted sync-footer">{t("Last synced {when}.", { when: ago(report.at) })}</p>}
-            {/* What few people need, and nobody often. */}
-            <details className="sync-more">
-              <summary>{t("More")}</summary>
-              <p className="sync-footer">
-                {/* Protocol 1 keeps no recovery copy: the account moves to the new sync first. */}
-                {status.sync.protocol === 2 && (
-                  <button className="link-button" onClick={askNewCode}>
-                    {t("New recovery code…")}
-                  </button>
-                )}
-                <button className="link-button" onClick={() => askReset(false)}>
-                  {t("Reset sync…")}
+          on && (
+            <div className={"sync-status" + (trouble ? " trouble" : "")}>
+              <span>{line}</span>
+              <span className="sync-actions">
+                <button className="secondary" disabled={state.syncing} onClick={() => void state.syncNow()}>
+                  <RefreshCw size={14} className={state.syncing ? "spin" : ""} /> {t("Sync now")}
                 </button>
-                <button
-                  className="link-button"
-                  onClick={() =>
-                    setConfirm({
-                      title: t("Lock sync on this computer?"),
-                      text: <p>{t("This computer forgets the sync key and stops syncing until you unlock sync on it again.")}</p>,
-                      label: t("Lock"),
-                      action: async () => {
-                        await cloud.syncLock();
-                        await state.refresh();
-                      },
-                    })
-                  }
-                >
-                  <Lock size={12} /> {t("Lock on this computer")}
-                </button>
-              </p>
-            </details>
-          </>
+              </span>
+            </div>
+          )
         )}
       </section>
+
+      {on && (
+        <section className="panel">
+          <h2>{t("Devices")}</h2>
+          {!!devices?.length && (
+            <ul className="setting-list device-list" aria-label={t("Devices")}>
+              {devices.map(deviceRow)}
+            </ul>
+          )}
+          {/* An account on the older sync has no list to show: nothing is said about it. */}
+          {devicesError && !devices && !older && (
+            <p className="muted sync-footer">
+              <span>{devicesError}</span>
+              <button className="link-button" onClick={loadDevices}>
+                {t("Try again")}
+              </button>
+            </p>
+          )}
+          <div className="device-add">
+            <button className="secondary" onClick={() => setAdding(true)}>
+              <Plus size={14} /> {t("Add a device")}
+            </button>
+          </div>
+          <p className="help">{t("To stop a device syncing, sign out on it. To cut off a device you no longer have, reset sync.")}</p>
+        </section>
+      )}
+
+      {(needing.length > 0 || quiet.length > 0) && (
+        <section className="panel">
+          <h2>{t("Budgets")}</h2>
+          {needing.length > 0 && <div className="setting-list">{needing.map(budgetRow)}</div>}
+          {quiet.length > 0 &&
+            (older ? (
+              // On the older sync each budget is taken out of sync by hand, so the count opens onto them.
+              <details className="sync-more">
+                <summary>{counted}</summary>
+                <div className="setting-list">{quiet.map(budgetRow)}</div>
+              </details>
+            ) : (
+              <p className="muted sync-footer">
+                <span>{counted}</span>
+                {manageBudgets && (
+                  <button className="link-button" onClick={manageBudgets}>
+                    {t("Manage budgets…")}
+                  </button>
+                )}
+              </p>
+            ))}
+        </section>
+      )}
+
+      {/* What few people need, and nobody often. */}
+      {status.email && (
+        <section className="panel more-panel">
+          <details className="sync-more">
+            <summary>{t("More")}</summary>
+            {on && (
+              <>
+                <p className="help">{about}</p>
+                <p className="sync-footer">
+                  {/* Protocol 1 keeps no recovery copy: the account moves to the new sync first. */}
+                  {!older && (
+                    <button className="link-button" onClick={askNewCode}>
+                      {t("New recovery code…")}
+                    </button>
+                  )}
+                  <button
+                    className="link-button"
+                    onClick={() =>
+                      setConfirm({
+                        title: t("Lock sync on this computer?"),
+                        text: <p>{t("This computer forgets the sync key and stops syncing until you unlock sync on it again.")}</p>,
+                        label: t("Lock"),
+                        action: async () => {
+                          await cloud.syncLock();
+                          await state.refresh();
+                        },
+                      })
+                    }
+                  >
+                    <Lock size={12} /> {t("Lock on this computer")}
+                  </button>
+                  <button className="link-button" onClick={() => askReset(false)}>
+                    {t("Reset sync…")}
+                  </button>
+                </p>
+              </>
+            )}
+            <p className="sync-footer">
+              {subscribed && plan?.renewsAt && !plan.endsAt && plan.status !== "past_due" && (
+                <span>{t("Renews on {date}.", { date: formatDate(plan.renewsAt.slice(0, 10)) })}</span>
+              )}
+              <button className="link-button" onClick={manageAccount}>
+                {t("Manage account")}
+              </button>
+              <button className="link-button" onClick={() => void cloud.open("/privacy/").catch(fail)}>
+                {t("Privacy policy")}
+              </button>
+            </p>
+            <p className="sync-footer">
+              <DeleteAccount cloud={state} />
+            </p>
+          </details>
+        </section>
+      )}
       {confirm && (
         <Confirm title={confirm.title} label={confirm.label} danger={confirm.danger} action={confirm.action} close={() => setConfirm(null)}>
           {confirm.text}
@@ -1032,6 +1179,7 @@ export function SyncSettings({
           added={() => {
             setAdding(false);
             toast({ message: t("Device added."), tone: "success" });
+            loadDevices();
           }}
         />
       )}

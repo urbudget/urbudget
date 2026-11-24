@@ -1352,17 +1352,14 @@
     <string name="cloud_sign_in">Sign in</string>
     <string name="cloud_new_code">New code</string>
     <string name="cloud_send_code">Send sign-in code</string>
-    <string name="cloud_session_stored">Session stored securely on this device</string>
     <string name="cloud_sign_out">Sign out on this device</string>
     <string name="cloud_subscription">Sync subscription</string>
     <string name="cloud_subscription_intro">UrBudget is free. Sync is an optional monthly subscription. Google Play shows its price and handles payment.</string>
-    <string name="cloud_sign_in_to_subscribe">Sign in above to subscribe or restore purchases.</string>
     <string name="cloud_show_price">Show price</string>
     <!-- The monthly price, as Google Play writes it. -->
     <string name="cloud_subscribe">Subscribe to sync · %1$s a month</string>
     <string name="cloud_restore_purchases">Restore purchases</string>
     <string name="cloud_manage_subscription">Manage subscription</string>
-    <string name="cloud_encrypted_sync">Encrypted sync</string>
     <string name="cloud_encrypted_sync_detail">Budgets are encrypted before uploading. Only your devices can open them.</string>
     <string name="cloud_subscription_active">Sync subscription active</string>
     <string name="cloud_subscription_needed">Sync needs an active subscription</string>
@@ -1371,25 +1368,60 @@
     <string name="cloud_sync_now">Sync now</string>
     <string name="cloud_lock">Lock sync on this device</string>
     <string name="cloud_set_up_or_unlock">Set up or unlock sync</string>
-    <string name="cloud_last_attempt">Last attempt: %1$s</string>
-    <string name="sync_state_cloud_only">In the cloud</string>
-    <string name="sync_state_local_only">This device only</string>
     <string name="sync_state_conflict">Needs review</string>
-    <string name="sync_state_synced">Synced</string>
-    <string name="sync_state_uploaded">Uploaded</string>
-    <string name="sync_state_downloaded">Downloaded</string>
-    <string name="sync_state_merged">Merged</string>
     <string name="sync_state_waiting">Waiting</string>
-    <string name="sync_state_update_app">Update app</string>
-    <string name="sync_state_error">Error</string>
-    <string name="sync_state_unknown">Unknown</string>
     <string name="cloud_download_open">Download and open</string>
     <string name="cloud_start_syncing">Start syncing</string>
     <string name="cloud_review_differences">Review differences</string>
     <string name="cloud_remove_copy">Remove cloud copy</string>
     <string name="cloud_delete_account">Delete account and cloud data</string>
-    <string name="cloud_sign_in_to_sync">Sign in above to use sync.</string>
     <string name="cloud_privacy">Privacy &amp; your choices</string>
+    <!-- Account & sync, top to bottom (docs/plans/2026-11-24-sync-device-approval.md, section 14). -->
+    <string name="cloud_plan_ending">Your sync subscription ends on %1$s.</string>
+    <string name="cloud_plan_payment_failed">The last payment for sync didn’t go through. Update your payment method to keep syncing.</string>
+    <string name="cloud_plan_renews">Renews on %1$s</string>
+    <string name="cloud_plan_ends">Ends on %1$s</string>
+    <string name="cloud_sync_title">Sync</string>
+    <string name="cloud_line_on">Sync is on.</string>
+    <!-- %1$s is when: "Last synced 2 minutes ago". -->
+    <string name="cloud_line_on_last">Sync is on. %1$s.</string>
+    <string name="cloud_line_waiting">Sync is on. Changes are waiting to sync.</string>
+    <string name="cloud_line_review">A budget changed on two devices. Review the differences below.</string>
+    <string name="cloud_line_attention">A budget needs you. See Budgets below.</string>
+    <string name="cloud_line_update">Update UrBudget to keep syncing.</string>
+    <string name="cloud_line_offline">Can’t reach UrBudget right now. Sync will try again.</string>
+    <string name="cloud_line_failed">The last sync didn’t finish.</string>
+    <string name="sync_last_now">Last synced just now</string>
+    <plurals name="sync_last_minutes">
+        <item quantity="one">Last synced %1$s minute ago</item>
+        <item quantity="other">Last synced %1$s minutes ago</item>
+    </plurals>
+    <plurals name="sync_last_hours">
+        <item quantity="one">Last synced %1$s hour ago</item>
+        <item quantity="other">Last synced %1$s hours ago</item>
+    </plurals>
+    <plurals name="sync_last_days">
+        <item quantity="one">Last synced %1$s day ago</item>
+        <item quantity="other">Last synced %1$s days ago</item>
+    </plurals>
+    <string name="cloud_devices">Devices</string>
+    <string name="sync_device_this">This phone</string>
+    <!-- %1$s is a day and a month: "3 November". -->
+    <string name="sync_device_added_on">A device added on %1$s</string>
+    <string name="sync_device_unnamed">A device with no name</string>
+    <string name="cloud_devices_note">To stop a device syncing, sign out on it. To cut off a device you no longer have, reset sync.</string>
+    <string name="cloud_budgets">Budgets</string>
+    <plurals name="cloud_budgets_syncing">
+        <item quantity="one">%1$s budget is syncing</item>
+        <item quantity="other">%1$s budgets are syncing</item>
+    </plurals>
+    <string name="cloud_budget_review">It changed on two devices. Choose what to keep.</string>
+    <string name="cloud_budget_kept">A copy kept on this phone. Recover it from the Budget library if you need what’s in it.</string>
+    <string name="cloud_budget_device_only">Kept only on this phone.</string>
+    <string name="cloud_budget_failed">It couldn’t sync.</string>
+    <string name="cloud_budget_download">In your account, but not on this phone.</string>
+    <string name="cloud_budget_update">Update UrBudget to sync this budget.</string>
+    <string name="cloud_open_library">Open Budget library</string>
     <!-- Sync with nothing to type: the first device makes the key with a recovery code, and a device is added with a one-time code (docs/plans/2026-11-24-sync-device-approval.md) -->
     <string name="cloud_turn_on_sync">Turn on sync</string>
     <string name="cloud_more">More</string>

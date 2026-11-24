@@ -59,6 +59,12 @@ object NativeServices {
         if (ready) return
         // In-place upgrade from the released Tauri Android app keeps its library and sealed vault.
         val directory = if (File(context.filesDir, "budgets.json").exists() || File(context.filesDir, "budget.sqlite3").exists()) context.filesDir else File(context.filesDir, "native")
+        // What this phone is called in the account's list of devices (Account & sync): the name its
+        // owner gave it, else its model. The engine takes a device's name from here.
+        runCatching {
+            val named = android.provider.Settings.Global.getString(context.contentResolver, "device_name")?.takeIf { it.isNotBlank() }
+            android.system.Os.setenv("COMPUTERNAME", named ?: android.os.Build.MODEL, true)
+        }
         decode(NativeBridge.initialize(context.applicationContext, directory.absolutePath))
         ready = true
         application = context.applicationContext

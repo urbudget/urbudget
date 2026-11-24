@@ -297,3 +297,41 @@ automated suites had not, all fixed on this branch.
   urbudget.app. A debug build now remembers the server it was last launched against
   (`DebugServer`, debug builds only).
 
+## 14. Account & sync, simplified, with the account's devices
+
+Asked for by the owner after using the screens: show which devices are connected, and make the
+screen simpler. One screen, top to bottom. Each part shows only when it has something to say.
+
+1. **Account.** Signed out: the email, then the code, one button each. Signed in: one row with
+   the email; Sign out is a quiet action on it.
+2. **Plan.** Only when there is something to do or to know: no plan (the price, Subscribe, and
+   the links the stores require beside it), a plan that is ending, a payment that failed. A plan
+   in good standing takes no room here; its details are under More.
+3. **Sync.**
+   - Off: **Turn on sync** and one sentence.
+   - Locked: as section 12 (scan or be scanned, one box, "Can't unlock?").
+   - On: one status line, "Sync is on. Last synced 2 minutes ago.", with **Sync now** beside
+     it. When something needs the person, the line says what, in plain words.
+   - The offer to move to the new sync stays here while it applies.
+4. **Devices**, while sync is on. One row per device that syncs (`sync_devices`): its name; the
+   device in hand reads "This iPhone", "This phone" or "This computer"; the others say when they
+   last synced ("Last synced 5 minutes ago", from `lastSeenAt`). A device with no name yet reads
+   "A device added on 3 November". **Add a device** ends the list. Under it, one line: "To stop
+   a device syncing, sign out on it. To cut off a device you no longer have, reset sync." The
+   list only shows: removing a device from here would not take back the key it holds.
+5. **Budgets**, only the ones that need something: differences to review, a kept copy, one kept
+   only on this device (with its Sync button), one that failed. A row is a name, one plain
+   sentence and one action. Budgets that are simply syncing are not listed; one line counts them
+   and leads to the budget library ("3 budgets are syncing").
+6. **More**, closed until opened: Sync automatically (phones), New recovery code, Lock sync on
+   this device, Reset sync, the plan's details with Manage subscription and Restore purchases,
+   Privacy & your choices, Delete account.
+
+No state names from the engine reach the screen ("local_only", "Signed Out"), and no words about
+how it works ("protocol", "key generation"). Every flow of section 12 behaves as it did; this
+changes where things are, not what they do.
+
+The server keeps each device's name and when it was last seen (migration 0019,
+`POST /installations {device}`, `GET /installations`), and a device that registered before
+that sends its name once more.
+

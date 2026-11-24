@@ -319,6 +319,30 @@ pub(super) fn held_key(cloud: &Cloud, account: &str, bootstrap: &Value) -> Optio
     verified_key(key, bootstrap)
 }
 
+/// The devices that sync with the signed-in account, this one first, then the most recently
+/// seen: `{devices: [{id, name, addedAt, lastSeenAt, current}]}`. A device that registered
+/// before the server kept names has none until its next sync. Listing is all this does: a
+/// device keeps the key it was given, and only a reset takes that back.
+pub async fn devices(cloud: &Cloud, library: &Library) -> Result<Value> {
+    let account = cloud.selected_account().ok_or("Sign in to your UrBudget account first.")?;
+    let mine = library.lock().account_state(&account)?["installationId"].as_str().unwrap_or_default().to_owned();
+    let listed = Transport::new(cloud, String::new())?.json(Method::GET, "/installations", None).await?;
+    let mut devices: Vec<Value> = listed["installations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|row| json!({
+            "id": row["installationId"], "name": row["device"], "addedAt": row["createdAt"],
+            "lastSeenAt": row["lastSeenAt"], "current": row["installationId"] == mine.as_str(),
+        }))
+        .collect();
+    devices.sort_by(|a, b| {
+        let key = |d: &Value| (d["current"] != true, std::cmp::Reverse(d["lastSeenAt"].as_str().unwrap_or_default().to_owned()));
+        key(a).cmp(&key(b))
+    });
+    Ok(json!({ "devices": devices }))
+}
+
 /// What the account's key is made from, as far as `bootstrap` says: a recovery code the app
 /// made (`"code"`) or a passphrase someone chose. `None` when the account has no key yet. An
 /// account from before recovery codes says nothing, and its key is from a passphrase.
@@ -591,13 +615,16 @@ async fn connect_bootstrap<'a>(
     }
     let state = library.lock().ensure_account(&account)?;
     let transport = Transport::new(cloud, string(&state, "installationId")?)?;
-    if state["registered"] != true {
+    // Registered once, and once more by a device that registered before the server kept names,
+    // so the account's list of devices can call it something (`devices`).
+    if state["registered"] != true || state["deviceNamed"] != true {
         transport.json(Method::POST, "/installations", Some(json!({
             "installationId":transport.installation,"device":super::device_name()
         }))).await?;
         let mut catalog = library.lock();
         let mut fresh = catalog.account_state(&account)?;
         fresh["registered"] = json!(true);
+        fresh["deviceNamed"] = json!(true);
         catalog.set_account_state(&account, &fresh)?;
     }
     Ok((account, transport, bootstrap))

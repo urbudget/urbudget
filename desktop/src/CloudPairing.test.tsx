@@ -74,6 +74,7 @@ beforeEach(() => {
     if (command === "sync_pair_offer") return next(offers, shown("spare", OFFERED));
     if (command === "sync_pair_state") return next(states, { waiting: true, collected: false });
     if (command === "sync_pair_cancel") return null;
+    if (command === "sync_devices") return { devices: [] };
     throw new Error(`Unexpected native command: ${command}`);
   });
 });

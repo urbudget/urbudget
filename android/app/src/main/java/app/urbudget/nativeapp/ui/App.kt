@@ -528,7 +528,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = ur.accent)
             morePage == "Account & sync" && budget == null -> GlassTop(Modifier.fillMaxSize(), top = {
                 PhoneTopBar(pageTitle("Account & sync"), onBack = { morePage = ""; tab = 0 })
-            }) { CloudScreen(vm) }
+            }) { CloudScreen(vm) { morePage = "Budget library" } }
             morePage == "Budget library" && budget == null -> GlassTop(Modifier.fillMaxSize(), top = {
                 PhoneTopBar(pageTitle("Budget library"), onBack = { morePage = ""; tab = 0 })
             }) { LibraryScreen(null, vm, importFile, exportFile) }
@@ -547,7 +547,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             }) {
                 Box(Modifier.fillMaxSize()) {
                     when (morePage) {
-                        "Account & sync" -> CloudScreen(vm)
+                        "Account & sync" -> CloudScreen(vm) { openChildPage("Budget library") }
                         "Bank connections" -> BankConnectionsScreen(budget, vm)
                         "Investments" -> InvestmentsPage(budget) { openChildPage("Interactive Brokers") }
                         "Interactive Brokers" -> IbkrScreen(budget, vm)

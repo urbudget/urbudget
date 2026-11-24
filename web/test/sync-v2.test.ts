@@ -607,6 +607,28 @@ it("gives heads moved before 0016 their origin while they keep the incarnation t
   }
 });
 
+describe("the account's devices", () => {
+  it("lists each device that syncs with the name it gave and when it was last seen", async () => {
+    await post("/installations", { installationId: "device_a", device: "  Ahmed's Mac  " }, "device_a");
+    await post("/installations", { installationId: "device_b", device: "x".repeat(200) }, "device_b");
+    await post("/installations", { installationId: "device_c" }, "device_c");
+    const list = async () => (await (await call("/installations")).json()).installations;
+    const [a, b, c] = await list();
+    expect(a).toMatchObject({ installationId: "device_a", device: "Ahmed's Mac" }); expect(Date.parse(a.lastSeenAt)).toBeGreaterThan(0);
+    expect(b.device).toHaveLength(64); expect(c.device).toBeNull();
+    // Registering again renames it, and with no name keeps the one it had.
+    await post("/installations", { installationId: "device_a", device: "Study iMac" }, "device_a");
+    await post("/installations", { installationId: "device_a" }, "device_a");
+    expect((await list())[0].device).toBe("Study iMac");
+    // A sync pass marks it seen, at most every ten minutes.
+    await setup("device_c"); await env.DB.prepare("UPDATE sync_installations_v2 SET last_seen_at='2026-01-01T00:00:00.000Z'").run();
+    const scoped = await scope();
+    await call("/catalog/changes?after=0", { headers: { ...scoped, "X-Sync-Installation": "device_c" } });
+    const seen = await list();
+    expect(Date.parse(seen[2].lastSeenAt)).toBeGreaterThan(Date.parse("2026-06-01")); expect(seen[0].lastSeenAt).toBe("2026-01-01T00:00:00.000Z");
+  });
+});
+
 describe("device approval", () => {
   const sealed = "c2VhbGVkLWtleS1ieXRlcw", id = "0123456789abcdef0123456789abcdef";
   const put = (pairing: string, body: unknown) => call(`/pairings/${pairing}`, { method: "PUT", headers: json(body), body: JSON.stringify(body) });

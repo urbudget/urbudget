@@ -15,6 +15,9 @@ struct UrBudgetApp: App {
         #if DEBUG
         DebugServer.restore()
         #endif
+        // What this device is called in the account's list of devices (Account & sync). The engine
+        // takes a device's name from here, as it takes a computer's from its system.
+        setenv("COMPUTERNAME", UIDevice.current.name, 1)
     }
 
     var body: some Scene {

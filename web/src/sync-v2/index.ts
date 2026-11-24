@@ -155,10 +155,14 @@ syncV2.post("/installations", async c => {
   if (!validId(body.installationId)) throw new ApiError(400, "invalid_installation", "Provide a random installation ID.");
   await rateLimit(c.env.DB, `sync-v2:register:${user(c)}`, 120, 3600);
   const row = await register(c.env, user(c), body.installationId);
+  // What the device calls itself, for the account's list of devices. Registering again renames it.
+  const device = typeof body.device === "string" ? body.device.trim().slice(0, 64) : "";
+  await statement(c.env.DB, `UPDATE sync_installations_v2 SET device=CASE WHEN $device='' THEN device ELSE $device END,last_seen_at=$at
+    WHERE user_id=$user AND installation_id=$id AND status='active'`, { user: user(c), id: body.installationId, device, at: now() }).run();
   return c.json({ installationId: body.installationId, lastSequence: row.last_sequence, receipt: row.receipt ? JSON.parse(row.receipt) : null });
 });
 syncV2.get("/installations", async c => {
-  const rows = await statement(c.env.DB, `SELECT installation_id AS installationId,status,created_at AS createdAt,last_sequence AS lastSequence,
+  const rows = await statement(c.env.DB, `SELECT installation_id AS installationId,status,created_at AS createdAt,last_sequence AS lastSequence,device,last_seen_at AS lastSeenAt,
     EXISTS(SELECT 1 FROM sync_staging_v2 s WHERE s.user_id=i.user_id AND s.installation_id=i.installation_id) AS pending
     FROM sync_installations_v2 i WHERE user_id=$user AND status='active' ORDER BY created_at,installation_id`, { user: user(c) }).all();
   return c.json({ installations: rows.results });
@@ -196,6 +200,10 @@ syncV2.get("/catalog/snapshot", async c => {
 });
 syncV2.get("/catalog/changes", async c => {
   const a = await scope(c);
+  // Every sync pass asks this, so it is where a device is seen. Noted at most every ten minutes.
+  const seen = c.req.header("X-Sync-Installation");
+  if (validId(seen)) await statement(c.env.DB, `UPDATE sync_installations_v2 SET last_seen_at=$at WHERE user_id=$user AND installation_id=$id AND status='active'
+    AND (last_seen_at IS NULL OR last_seen_at<$before)`, { user: user(c), id: seen, at: now(), before: new Date(Date.now() - 600_000).toISOString() }).run();
   const after = counter(c.req.query("after") ?? "0", "after");
   const through = counter(c.req.query("through") ?? a.catalog_sequence, "through");
   if (BigInt(after) < BigInt(a.min_cursor)) throw new ApiError(410, "cursor_expired", "Fetch a new active snapshot and reconcile known IDs.");

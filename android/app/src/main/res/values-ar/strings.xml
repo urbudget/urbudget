@@ -1525,17 +1525,14 @@
     <string name="cloud_sign_in">تسجيل الدخول</string>
     <string name="cloud_new_code">رمز جديد</string>
     <string name="cloud_send_code">إرسال رمز تسجيل الدخول</string>
-    <string name="cloud_session_stored">الجلسة محفوظة بأمان على هذا الجهاز</string>
     <string name="cloud_sign_out">تسجيل الخروج على هذا الجهاز</string>
     <string name="cloud_subscription">اشتراك المزامنة</string>
     <string name="cloud_subscription_intro">تطبيق UrBudget مجاني. والمزامنة اشتراك شهري اختياري، يعرض Google Play سعره ويتولى الدفع.</string>
-    <string name="cloud_sign_in_to_subscribe">سجِّل الدخول أعلاه للاشتراك أو لاستعادة المشتريات.</string>
     <string name="cloud_show_price">عرض السعر</string>
     <!-- The monthly price, as Google Play writes it. -->
     <string name="cloud_subscribe">الاشتراك في المزامنة · \u2068%1$s\u2069 شهريًا</string>
     <string name="cloud_restore_purchases">استعادة المشتريات</string>
     <string name="cloud_manage_subscription">إدارة الاشتراك</string>
-    <string name="cloud_encrypted_sync">المزامنة المشفَّرة</string>
     <string name="cloud_encrypted_sync_detail">تُشفَّر الميزانيات قبل رفعها، ولا تستطيع فتحها إلا أجهزتك.</string>
     <string name="cloud_subscription_active">اشتراك المزامنة فعّال</string>
     <string name="cloud_subscription_needed">تحتاج المزامنة إلى اشتراك فعّال</string>
@@ -1544,25 +1541,76 @@
     <string name="cloud_sync_now">المزامنة الآن</string>
     <string name="cloud_lock">قفل المزامنة على هذا الجهاز</string>
     <string name="cloud_set_up_or_unlock">إعداد المزامنة أو فتح قفلها</string>
-    <string name="cloud_last_attempt">آخر محاولة: \u2068%1$s\u2069</string>
-    <string name="sync_state_cloud_only">في السحابة</string>
-    <string name="sync_state_local_only">هذا الجهاز فقط</string>
     <string name="sync_state_conflict">بحاجة إلى مراجعة</string>
-    <string name="sync_state_synced">متزامنة</string>
-    <string name="sync_state_uploaded">رُفعت</string>
-    <string name="sync_state_downloaded">نُزّلت</string>
-    <string name="sync_state_merged">دُمجت</string>
     <string name="sync_state_waiting">قيد الانتظار</string>
-    <string name="sync_state_update_app">حدّث التطبيق</string>
-    <string name="sync_state_error">خطأ</string>
-    <string name="sync_state_unknown">غير معروفة</string>
     <string name="cloud_download_open">تنزيل وفتح</string>
     <string name="cloud_start_syncing">بدء المزامنة</string>
     <string name="cloud_review_differences">مراجعة الاختلافات</string>
     <string name="cloud_remove_copy">إزالة النسخة السحابية</string>
     <string name="cloud_delete_account">حذف الحساب والبيانات السحابية</string>
-    <string name="cloud_sign_in_to_sync">سجِّل الدخول أعلاه لاستخدام المزامنة.</string>
     <string name="cloud_privacy">الخصوصية وخياراتك</string>
+    <!-- Account & sync, top to bottom (docs/plans/2026-11-24-sync-device-approval.md, section 14). -->
+    <string name="cloud_plan_ending">ينتهي اشتراك المزامنة في \u2068%1$s\u2069.</string>
+    <string name="cloud_plan_payment_failed">لم تنجح آخر دفعة لاشتراك المزامنة. حدِّث وسيلة الدفع لتستمر المزامنة.</string>
+    <string name="cloud_plan_renews">يتجدد في \u2068%1$s\u2069</string>
+    <string name="cloud_plan_ends">ينتهي في \u2068%1$s\u2069</string>
+    <string name="cloud_sync_title">المزامنة</string>
+    <string name="cloud_line_on">المزامنة تعمل.</string>
+    <!-- %1$s is when: "Last synced 2 minutes ago". -->
+    <string name="cloud_line_on_last">المزامنة تعمل. \u2068%1$s\u2069.</string>
+    <string name="cloud_line_waiting">المزامنة تعمل. هناك تغييرات بانتظار المزامنة.</string>
+    <string name="cloud_line_review">تغيّرت ميزانية على جهازين. راجع الاختلافات أدناه.</string>
+    <string name="cloud_line_attention">ميزانية تحتاج تدخلك. انظر «الميزانيات» أدناه.</string>
+    <string name="cloud_line_update">حدِّث UrBudget لتستمر المزامنة.</string>
+    <string name="cloud_line_offline">تعذّر الوصول إلى UrBudget الآن. ستُعاد محاولة المزامنة.</string>
+    <string name="cloud_line_failed">لم تكتمل آخر مزامنة.</string>
+    <string name="sync_last_now">آخر مزامنة الآن</string>
+    <plurals name="sync_last_minutes">
+        <item quantity="zero">آخر مزامنة الآن</item>
+        <item quantity="one">آخر مزامنة قبل دقيقة</item>
+        <item quantity="two">آخر مزامنة قبل دقيقتين</item>
+        <item quantity="few">آخر مزامنة قبل \u2068%1$s\u2069 دقائق</item>
+        <item quantity="many">آخر مزامنة قبل \u2068%1$s\u2069 دقيقة</item>
+        <item quantity="other">آخر مزامنة قبل \u2068%1$s\u2069 دقيقة</item>
+    </plurals>
+    <plurals name="sync_last_hours">
+        <item quantity="zero">آخر مزامنة الآن</item>
+        <item quantity="one">آخر مزامنة قبل ساعة</item>
+        <item quantity="two">آخر مزامنة قبل ساعتين</item>
+        <item quantity="few">آخر مزامنة قبل \u2068%1$s\u2069 ساعات</item>
+        <item quantity="many">آخر مزامنة قبل \u2068%1$s\u2069 ساعة</item>
+        <item quantity="other">آخر مزامنة قبل \u2068%1$s\u2069 ساعة</item>
+    </plurals>
+    <plurals name="sync_last_days">
+        <item quantity="zero">آخر مزامنة اليوم</item>
+        <item quantity="one">آخر مزامنة قبل يوم</item>
+        <item quantity="two">آخر مزامنة قبل يومين</item>
+        <item quantity="few">آخر مزامنة قبل \u2068%1$s\u2069 أيام</item>
+        <item quantity="many">آخر مزامنة قبل \u2068%1$s\u2069 يومًا</item>
+        <item quantity="other">آخر مزامنة قبل \u2068%1$s\u2069 يومًا</item>
+    </plurals>
+    <string name="cloud_devices">الأجهزة</string>
+    <string name="sync_device_this">هذا الهاتف</string>
+    <!-- %1$s is a day and a month: "3 November". -->
+    <string name="sync_device_added_on">جهاز أُضيف في \u2068%1$s\u2069</string>
+    <string name="sync_device_unnamed">جهاز بلا اسم</string>
+    <string name="cloud_devices_note">لإيقاف المزامنة على جهاز، سجِّل الخروج عليه. ولقطع جهاز لم يعد معك، أعد تعيين المزامنة.</string>
+    <string name="cloud_budgets">الميزانيات</string>
+    <plurals name="cloud_budgets_syncing">
+        <item quantity="zero">لا ميزانيات تُزامَن</item>
+        <item quantity="one">ميزانية واحدة تُزامَن</item>
+        <item quantity="two">ميزانيتان تُزامَنان</item>
+        <item quantity="few">\u2068%1$s\u2069 ميزانيات تُزامَن</item>
+        <item quantity="many">\u2068%1$s\u2069 ميزانية تُزامَن</item>
+        <item quantity="other">\u2068%1$s\u2069 ميزانية تُزامَن</item>
+    </plurals>
+    <string name="cloud_budget_review">تغيّرت على جهازين. اختر ما تحتفظ به.</string>
+    <string name="cloud_budget_kept">نسخة محفوظة على هذا الهاتف. استعدها من مكتبة الميزانيات إن احتجت إلى ما فيها.</string>
+    <string name="cloud_budget_device_only">محفوظة على هذا الهاتف فقط.</string>
+    <string name="cloud_budget_failed">تعذّرت مزامنتها.</string>
+    <string name="cloud_budget_download">في حسابك، وليست على هذا الهاتف.</string>
+    <string name="cloud_budget_update">حدِّث UrBudget لمزامنة هذه الميزانية.</string>
+    <string name="cloud_open_library">فتح مكتبة الميزانيات</string>
     <!-- Sync with nothing to type: the first device makes the key with a recovery code, and a device is added with a one-time code -->
     <string name="cloud_turn_on_sync">تشغيل المزامنة</string>
     <string name="cloud_more">المزيد</string>

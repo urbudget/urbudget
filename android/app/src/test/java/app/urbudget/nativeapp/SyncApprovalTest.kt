@@ -6,6 +6,8 @@ import org.junit.Test
 import java.time.Instant
 
 class SyncApprovalTest {
+    @org.junit.Before fun english() = EnglishWords.install()
+
     private fun status(sync: String) = JSONObject("""{"email":"qa@example.test","sync":$sync}""")
 
     @Test fun theScreenFollowsTheFreshAnswerAndFallsBackOnTheLastSyncsWord() {
@@ -131,5 +133,117 @@ class SyncApprovalTest {
         val foreign = QrGrid(other.width, BooleanArray(other.width * other.width) { other[it % other.width, it / other.width] })
         val (theirs, theirWidth, theirHeight) = frame(foreign)
         assertNull(decodeSyncCode(theirs, theirWidth, theirHeight))
+    }
+
+    // Account & sync, simplified (section 14 of the plan).
+
+    private val now = Instant.parse("2026-11-24T12:00:00Z")
+    private val utc = java.time.ZoneOffset.UTC
+
+    @Test fun aMomentReadsAsTheEngineOrTheServerWroteIt() {
+        assertEquals(Instant.parse("2026-11-24T11:58:00Z"), syncInstant("2026-11-24T11:58:00.000Z"))
+        assertEquals(Instant.parse("2026-11-24T11:58:00Z"), syncInstant("2026-11-24T11:58:00+00:00"))
+        assertEquals("a database's own time is UTC", Instant.parse("2026-11-24T11:58:00Z"), syncInstant("2026-11-24 11:58:00"))
+        for (nothing in listOf(null, "", "null", "yesterday")) assertNull(nothing, syncInstant(nothing))
+    }
+
+    @Test fun lastSyncedCountsInMinutesThenHoursThenDays() {
+        fun ago(seconds: Long) = lastSynced(now.minusSeconds(seconds), now)
+        assertEquals("Last synced just now", ago(20))
+        assertEquals("a clock behind the server's", "Last synced just now", ago(-90))
+        assertEquals("Last synced 1 minute ago", ago(60))
+        assertEquals("Last synced 5 minutes ago", ago(5 * 60 + 30))
+        assertEquals("Last synced 59 minutes ago", ago(59 * 60 + 59))
+        assertEquals("Last synced 1 hour ago", ago(3600))
+        assertEquals("Last synced 47 hours ago", ago(47 * 3600L + 60))
+        assertEquals("Last synced 2 days ago", ago(48 * 3600L))
+        assertEquals("Last synced 40 days ago", ago(40 * 86400L))
+        assertNull("a device that hasn't synced since names were kept", lastSynced(null, now))
+    }
+
+    @Test fun aDevicesRowSaysWhichItIsAndWhenItLastSynced() {
+        val devices = syncDevices(JSONObject("""{"devices":[
+            {"id":"a","name":"Pixel 9","addedAt":"2026-10-01T08:00:00.000Z","lastSeenAt":"2026-11-24T11:59:30.000Z","current":true},
+            {"id":"b","name":"Ahmad’s MacBook","addedAt":"2026-10-02T08:00:00.000Z","lastSeenAt":"2026-11-24T11:55:00.000Z","current":false},
+            {"id":"c","name":null,"addedAt":"2026-11-03T08:00:00.000Z","lastSeenAt":null,"current":false},
+            {"id":"d","name":"  ","addedAt":null,"lastSeenAt":"2026-11-21T12:00:00.000Z","current":false}]}"""))
+        assertEquals("in the engine's order, this phone first", listOf("a", "b", "c", "d"), devices.map { it.id })
+        assertEquals(listOf("This phone", "Ahmad’s MacBook", "A device added on 3 November", "A device with no name"), devices.map { deviceTitle(it, utc) })
+        assertEquals(listOf(null, "Last synced 5 minutes ago", null, "Last synced 3 days ago"), devices.map { deviceDetail(it, now) })
+        assertTrue(syncDevices(null).isEmpty())
+        assertTrue(syncDevices(JSONObject("""{"devices":null}""")).isEmpty())
+    }
+
+    private fun synced(report: String, protocol: Int = 2) = status("""{"unlocked":true,"protocol":$protocol,"last":$report}""")
+    private fun budget(state: String, message: String? = null) =
+        """{"id":"$state","name":"Home","state":"$state","message":${message?.let { "\"$it\"" } ?: "null"},"conflicts":[],"notes":[]}"""
+
+    @Test fun theStatusLineSaysSyncIsOnOrWhatNeedsThePerson() {
+        assertEquals("Sync is on. Last synced 2 minutes ago.", syncLineText(synced("""{"at":"2026-11-24T11:58:00+00:00","state":"ok","budgets":[${budget("synced")}]}"""), now))
+        assertEquals("nothing has synced yet", "Sync is on.", syncLineText(status("""{"unlocked":true,"last":null}"""), now))
+        assertEquals("Sync is on. Changes are waiting to sync.", syncLineText(synced("""{"at":"2026-11-24T11:58:00+00:00","state":"waiting","budgets":[${budget("queued")}]}"""), now))
+        fun line(report: String) = syncLine(synced(report))
+        assertEquals(SyncLine.Review, line("""{"state":"attention","budgets":[${budget("error")},${budget("conflict")}]}"""))
+        assertEquals(SyncLine.Review, line("""{"state":"attention","budgets":[${budget("deletion_conflict")}]}"""))
+        assertEquals(SyncLine.Update, line("""{"state":"ok","budgets":[${budget("update_app")}]}"""))
+        assertEquals(SyncLine.NeedsPlan, line("""{"state":"subscription_required","budgets":[]}"""))
+        assertEquals(SyncLine.NeedsPlan, line("""{"state":"attention","budgets":[${budget("subscription_required")}]}"""))
+        assertEquals(SyncLine.Attention, line("""{"state":"attention","budgets":[${budget("recovery")}]}"""))
+        assertEquals(SyncLine.Offline, line("""{"state":"offline","message":"OFFLINE: no route","budgets":[${budget("synced")}]}"""))
+        assertEquals("Can’t reach UrBudget right now. Sync will try again.", syncLineText(synced("""{"state":"offline","message":"OFFLINE: no route","budgets":[]}"""), now))
+        // A sync that stopped says why in the engine's words, and plainly when it gave none.
+        assertEquals("The server is busy.", syncLineText(synced("""{"state":"error","message":"The server is busy.","budgets":[]}"""), now))
+        assertEquals("The last sync didn’t finish.", syncLineText(synced("""{"state":"error","message":null,"budgets":[]}"""), now))
+        assertNull("a sync that failed isn't when it last synced", lastSyncedAt(synced("""{"at":"2026-11-24T11:58:00+00:00","state":"error","budgets":[]}""")))
+    }
+
+    @Test fun onlyBudgetsThatNeedSomethingAreListedAndTheRestAreCounted() {
+        val all = listOf("synced", "conflict", "uploaded", "recovery", "local_only", "error", "downloaded", "merged", "waiting", "queued",
+            "deletion_conflict", "update_app", "subscription_required", "trashed", "evicted", "paused", "cloud_only")
+        val sorted = syncBudgets(synced("""{"state":"attention","budgets":[${all.joinToString(",") { budget(it) }}]}"""))
+        assertEquals(listOf(BudgetNeed.Review, BudgetNeed.KeptCopy, BudgetNeed.DeviceOnly, BudgetNeed.Failed, BudgetNeed.ReviewDeletion, BudgetNeed.Update, BudgetNeed.NeedsPlan),
+            sorted.rows.map { it.need })
+        assertEquals("in the engine's order", listOf("conflict", "recovery", "local_only", "error", "deletion_conflict", "update_app", "subscription_required"), sorted.rows.map { it.entry.optString("id") })
+        assertEquals("synced, uploaded, downloaded, merged, waiting and queued", 6, sorted.syncing)
+        // The older sync downloads a budget that is only in the account from here.
+        val older = syncBudgets(synced("""{"state":"ok","budgets":[${budget("cloud_only")},${budget("synced")}]}""", protocol = 1))
+        assertEquals(listOf(BudgetNeed.Download), older.rows.map { it.need })
+        assertEquals(1, older.syncing)
+        val none = syncBudgets(status("""{"unlocked":false,"last":null}"""))
+        assertTrue(none.rows.isEmpty() && none.syncing == 0)
+        assertTrue(syncBudgets(null).rows.isEmpty())
+    }
+
+    @Test fun aListedBudgetSaysOnePlainSentence() {
+        fun sentence(state: String, message: String? = null) = budgetSentence(syncBudgets(synced("""{"state":"attention","budgets":[${budget(state, message)}]}""", protocol = 1)).rows.single())
+        assertEquals("It changed on two devices. Choose what to keep.", sentence("conflict"))
+        assertEquals("the engine's own words for what to choose", "The copies differ. Choose which version to keep.", sentence("conflict", "The copies differ. Choose which version to keep."))
+        assertEquals("Kept only on this phone.", sentence("local_only"))
+        assertEquals("It couldn’t sync.", sentence("error"))
+        assertEquals("The file is damaged.", sentence("error", "The file is damaged."))
+        assertEquals("In your account, but not on this phone.", sentence("cloud_only"))
+        // A kept copy is worded here: the engine's sentence for it says how sync works.
+        assertEquals("A copy kept on this phone. Recover it from the Budget library if you need what’s in it.",
+            sentence("recovery", "The account's encryption key changed. Recover this preserved local budget as a new copy."))
+        assertEquals("Update UrBudget to sync this budget.", sentence("update_app", "Version 9 needed."))
+        assertEquals("Sync needs an active subscription", sentence("subscription_required"))
+    }
+
+    @Test fun thePlanTakesRoomOnlyWhenThereIsSomethingToDoOrKnow() {
+        fun overview(active: Boolean, plan: String) = JSONObject("""{"subscription":$plan,"sync":{"active":$active}}""")
+        val unlocked = status("""{"unlocked":true}""")
+        assertEquals("not known yet", PlanNotice.None, planNotice(unlocked, null))
+        assertEquals(PlanNotice.None, planNotice(unlocked, overview(true, """{"provider":"google","status":"active","renewsAt":"2026-12-03T00:00:00.000Z","endsAt":null}""")))
+        assertEquals(PlanNotice.Subscribe, planNotice(unlocked, overview(false, "null")))
+        assertEquals(PlanNotice.Subscribe, planNotice(unlocked, overview(false, """{"provider":"google","status":"canceled","renewsAt":null,"endsAt":"2026-11-01T00:00:00.000Z"}""")))
+        val ending = overview(true, """{"provider":"google","status":"active","renewsAt":null,"endsAt":"2026-12-03T00:00:00.000Z"}""")
+        assertEquals(PlanNotice.Ending, planNotice(unlocked, ending))
+        assertEquals(java.time.LocalDate.of(2026, 12, 3), planDay(ending, "endsAt", utc))
+        assertNull(planDay(ending, "renewsAt", utc))
+        assertEquals(PlanNotice.PaymentFailed, planNotice(unlocked, overview(true, """{"provider":"google","status":"past_due","renewsAt":"2026-12-03T00:00:00.000Z","endsAt":null}""")))
+        // Offline, the plan is only mentioned when the last sync was turned away for want of one.
+        assertEquals(PlanNotice.Subscribe, planNotice(synced("""{"state":"subscription_required","budgets":[]}"""), null))
+        assertEquals(PlanNotice.Subscribe, planNotice(synced("""{"state":"attention","budgets":[${budget("subscription_required")}]}"""), null))
+        assertEquals(PlanNotice.None, planNotice(synced("""{"state":"ok","budgets":[${budget("synced")}]}"""), null))
     }
 }
