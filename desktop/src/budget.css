@@ -24,15 +24,9 @@
   padding-block: 0 var(--gutter);
   padding-inline: var(--gutter) calc(var(--gutter) - var(--scrollbar-size));
   overflow: auto;
-  scrollbar-gutter: stable;
+  /* Always there, so the margins hold on a Mac too (see .page-scroll). */
+  overflow-y: scroll;
   container-type: inline-size;
-}
-/* WebKit before Safari 18.2 (macOS 15.1's) has no scrollbar-gutter: there the bar's track stays
-   instead, empty until there's something to scroll, so the margins still match. */
-@supports not (scrollbar-gutter: stable) {
-  .budget-main {
-    overflow-y: scroll;
-  }
 }
 /* When the budget column is narrow (a small window or a wide sidebar), the view tabs get their
    own row instead of being squeezed. */

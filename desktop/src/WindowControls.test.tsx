@@ -4,12 +4,19 @@ import { TitleBar } from "./WindowControls";
 
 const win = vi.hoisted(() => {
   const focus: ((e: { payload: boolean }) => void)[] = [];
+  const resized: (() => void)[] = [];
   return {
     focus,
+    resized,
+    fullscreen: false,
     name: "UrBudget (assistant preview)",
     title: async () => win.name,
     isMaximized: async () => false,
-    onResized: async () => () => {},
+    isFullscreen: async () => win.fullscreen,
+    onResized: async (handler: () => void) => {
+      resized.push(handler);
+      return () => {};
+    },
     onFocusChanged: async (handler: (e: { payload: boolean }) => void) => {
       focus.push(handler);
       return () => {};
@@ -72,4 +79,24 @@ it("fades while another window has focus", async () => {
   expect(container.querySelector(".titlebar.inactive")).toBeTruthy();
   act(() => win.focus.at(-1)!({ payload: true }));
   expect(container.querySelector(".titlebar.inactive")).toBeNull();
+});
+
+it("on a Mac leaves the window buttons to the traffic lights, and gives their room back in full screen", async () => {
+  const { container } = render(
+    <TitleBar system="macos">
+      <button>Assistant</button>
+    </TitleBar>,
+  );
+  await waitFor(() => expect(shownName(container)).toBe("UrBudget (assistant preview)"));
+  expect(container.querySelector(".titlebar.mac")).toBeTruthy();
+  expect(container.querySelector(".window-controls")).toBeNull();
+  expect(screen.getByRole("button", { name: "Assistant" }).closest(".titlebar-actions")).toBeTruthy();
+  expect(container.querySelector(".titlebar.fullscreen")).toBeNull();
+
+  win.fullscreen = true;
+  act(() => win.resized.at(-1)!());
+  await waitFor(() => expect(container.querySelector(".titlebar.mac.fullscreen")).toBeTruthy());
+  win.fullscreen = false;
+  act(() => win.resized.at(-1)!());
+  await waitFor(() => expect(container.querySelector(".titlebar.fullscreen")).toBeNull());
 });

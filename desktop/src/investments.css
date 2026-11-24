@@ -212,7 +212,8 @@
   padding-block: var(--gutter);
   padding-inline: var(--gutter) calc(var(--gutter) - var(--scrollbar-size));
   overflow: auto;
-  scrollbar-gutter: stable;
+  /* Always there, so the margins hold on a Mac too (see .page-scroll). */
+  overflow-y: scroll;
 }
 .holdings-page > * {
   flex: none;

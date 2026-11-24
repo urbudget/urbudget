@@ -1050,9 +1050,10 @@ tr.muted td {
   margin-bottom: 10px;
 }
 /* New budget's fields sit in a fieldset that only disables them, which the rule above doesn't
-   reach: its checkbox keeps clear of the fields on either side. */
+   reach: its checkbox keeps clear of the fields on either side, as far as the format fields'
+   rows are apart. */
 .new-budget-fields > .checkbox-label {
-  margin: 6px 0 2px;
+  margin: 10px 0;
 }
 .modal-actions {
   display: flex;
