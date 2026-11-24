@@ -6,6 +6,9 @@ import UniformTypeIdentifiers
 struct WelcomeView: View {
     /// Set when leaving the sample budget (see `SampleBanner`).
     var leaving: SampleExit?
+    /// With no budget open: the budgets this device has (kept copies, the trash, ones in the
+    /// account), from the top bar's trailing end.
+    var openLibrary: (() -> Void)?
     @Environment(BudgetStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var name = String(localized: "My budget")
@@ -16,8 +19,9 @@ struct WelcomeView: View {
     @State private var decimal = StarterBudget.localFormats(currency: "SAR").number.decimal
     @State private var dateFormat = StarterBudget.localFormats(currency: "SAR").date
 
-    init(leaving: SampleExit? = nil) {
+    init(leaving: SampleExit? = nil, openLibrary: (() -> Void)? = nil) {
         self.leaving = leaving
+        self.openLibrary = openLibrary
     }
 
     var body: some View {
@@ -96,6 +100,16 @@ struct WelcomeView: View {
             .toolbar {
                 if leaving != nil {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                } else if let openLibrary {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        // Named as well as drawn: a bar button's label alone would show only the folder.
+                        Button(action: openLibrary) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "folder")
+                                Text("Budget library")
+                            }
+                        }
+                    }
                 }
             }
         }
