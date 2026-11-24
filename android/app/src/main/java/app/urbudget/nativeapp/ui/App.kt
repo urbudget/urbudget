@@ -442,6 +442,9 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             library = { openPage("Budget library") }) { openPage("Settings & data") }
     }
     val budget = state.budget
+    // A transaction needs an account to go in: until there's an open one, "+ Transaction" would open a
+    // form that can't be saved, so it isn't offered (Budget and Accounts ask for an account instead).
+    val canAddTransaction = remember(budget) { budget?.rows("accounts")?.any { !it.optBoolean("archived") } == true }
     // The register and Reports split into list and detail (ListDetail) with room for both, and have it.
     val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
     // The budget splits only while a category is open (BudgetScreen docks it beside the budget).
@@ -535,7 +538,8 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
                 WelcomeScreen(state.busy, { made ->
                 if (vm.hasExport()) pendingCreate = made else vm.createBudget(made.name, made.currency, made.sample, template = made.template)
             }, importFile, if (vm.hasExport()) exportFile else null, if (state.recoveryAvailable) ({ confirmRestore = true }) else null,
-                { tab = 4; morePage = "Account & sync" })
+                { tab = 4; morePage = "Account & sync" },
+                { vm.service("account_open", JSONObject().put("next", GUIDE_PATH)) })
             }
             // Each page's list scrolls under the bar, which turns to glass over it. Bank messages has screens of its own inside and keeps below the bar.
             tab == 4 && morePage.isNotEmpty() -> pageStates.SaveableStateProvider("page:$morePage") { GlassTop(Modifier.fillMaxSize(), padded = morePage == "Bank messages", top = {
@@ -574,14 +578,14 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             else pageStates.SaveableStateProvider(if (tab == 1) "register:$accountFilter|$categoryFilter|$rangeFrom|$rangeThrough|$rangeSearch" else "tab:$tab") { when (tab) {
                 0 -> BudgetScreen(budget, state.summary, state.month, vm::selectMonth, vm, common,
                     onTransactions = { target -> openRegister(target, 0) },
-                    onPayCard = { card -> openEditor("cardPayment", JSONObject().put("id", card)) }, showing = showing)
+                    onPayCard = { card -> openEditor("cardPayment", JSONObject().put("id", card)) }, addAccount = { openEditor("account") }, showing = showing)
                 1 -> TransactionsScreen(budget, state.summary, accountFilter, categoryFilter,
                     onBack = when {
                         returnTab >= 0 -> ({ leaveForm { closeRegister() } })
                         accountFilter.isNotEmpty() -> ({ leaveForm { accountFilter = ""; tab = 2 } })
                         categoryFilter.isNotEmpty() -> ({ leaveForm { categoryFilter = ""; tab = 0 } })
                         else -> null
-                    }, initialFrom = rangeFrom, initialThrough = rangeThrough, initialSearch = rangeSearch, payCard = { card -> openEditor("cardPayment", JSONObject().put("id", card)) }, setCategory = { categoryFilter = it }, edit = { openEditor("transaction", it) }, add = { openEditor("transaction") },
+                    }, initialFrom = rangeFrom, initialThrough = rangeThrough, initialSearch = rangeSearch, payCard = { card -> openEditor("cardPayment", JSONObject().put("id", card)) }, setCategory = { categoryFilter = it }, edit = { openEditor("transaction", it) }, add = { openEditor("transaction") }, addAccount = { openEditor("account") },
                     editAccount = { openEditor("account", it) }, reconcile = { openEditor("reconcile", it) },
                     editSchedule = { openEditor("schedule", it) }, vm = vm, bar = common, setDockHidden = { dockHidden = it },
                     openAccount = { id -> accountFilter = id; categoryFilter = ""; rangeFrom = ""; rangeThrough = "" },
@@ -610,7 +614,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
         // of whatever is open on the other.
         val dockSide = if (hingeRoom != null) Modifier.width(hingeRoom) else Modifier.fillMaxWidth()
         if (budget != null) {
-            val showAdd = tab in 0..2 && morePage.isEmpty() && !dockHidden && !state.loading && !formOpenBeside && !railAdd && !holdingsOpen
+            val showAdd = tab in 0..2 && morePage.isEmpty() && !dockHidden && !state.loading && !formOpenBeside && !railAdd && !holdingsOpen && canAddTransaction
             Box(Modifier.align(Alignment.BottomStart).then(dockSide), contentAlignment = Alignment.BottomEnd) {
                 AnimatedVisibility(showAdd, Modifier.navigationBarsPadding().padding(end = 16.dp, bottom = if (rail) 16.dp else 92.dp),
                     enter = fadeIn() + scaleIn(initialScale = .8f), exit = fadeOut() + scaleOut(targetScale = .8f)) {
@@ -645,7 +649,7 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
             Box(Modifier.fillMaxSize().padding(top = if (onTable) table!! else 0.dp)) {
                 TabRail(if (tab == 4) 4 else tab, ::openTab, Modifier.align(Alignment.CenterStart)
                     .windowInsetsPadding(RailInsets.only(WindowInsetsSides.Start + (if (onTable) WindowInsetsSides.Bottom else WindowInsetsSides.Vertical))).padding(start = RailMargin),
-                    add = if (railAdd && !state.loading) ({ openEditor("transaction") }) else null)
+                    add = if (railAdd && !state.loading && canAddTransaction) ({ openEditor("transaction") }) else null)
             }
         }
         // Beside a hinge the dock spans only the start side, the phone it makes.
@@ -902,7 +906,7 @@ private fun MoreDrawer(budget: JSONObject, close: () -> Unit, open: (String) -> 
 private data class NewBudget(val name: String, val currency: String, val sample: Boolean, val template: String?)
 
 @Composable
-private fun WelcomeScreen(busy: Boolean, create: (NewBudget) -> Unit, importFile: () -> Unit, exportFile: (() -> Unit)?, restore: (() -> Unit)?, signIn: () -> Unit) {
+private fun WelcomeScreen(busy: Boolean, create: (NewBudget) -> Unit, importFile: () -> Unit, exportFile: (() -> Unit)?, restore: (() -> Unit)?, signIn: () -> Unit, howThisWorks: () -> Unit) {
     // A new budget's name starts in the language in use; after that it's the person's data.
     val defaultName = stringResource(R.string.welcome_default_name)
     val sampleName = stringResource(R.string.welcome_sample_name)
@@ -921,11 +925,12 @@ private fun WelcomeScreen(busy: Boolean, create: (NewBudget) -> Unit, importFile
         Text(stringResource(R.string.welcome_title), style = MaterialTheme.typography.displaySmall, color = ur.text)
         Text(stringResource(R.string.welcome_message),
             style = MaterialTheme.typography.bodyLarge, color = ur.text2)
-        Spacer(Modifier.height(8.dp))
+        // A quiet link: the guide on urbudget.app, for anyone who wants the method before starting.
+        TextButton(howThisWorks, contentPadding = PaddingValues(0.dp)) { Text(stringResource(R.string.help_how_this_works)) }
         ListCard {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Field(name, { name = it }, stringResource(R.string.budget_name))
-                Choice(stringResource(R.string.budget_currency), currency, (listOf(currency, "SAR", "USD", "EUR", "GBP", "CAD", "AUD", "AED", "INR").distinct()).map { it to it }, { currency = it })
+                Choice(stringResource(R.string.budget_currency), currency, remember(languageKey()) { currencyChoices(currency) }, { currency = it })
                 TemplateChoice(template) { template = it }
                 PrimaryButton(stringResource(R.string.welcome_create), { create(NewBudget(name, currency, false, template)) }, Modifier.fillMaxWidth(), enabled = !busy && name.isNotBlank())
             }

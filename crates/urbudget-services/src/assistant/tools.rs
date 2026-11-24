@@ -73,7 +73,7 @@ fn listed() -> Vec<Spec> {
     vec![
         Spec {
             name: "get_month",
-            description: "This month's budget: Ready to Assign, every category's assigned, activity and available amounts (negative available means overspent), what targets still need, and account balances.",
+            description: "This month's budget: Unassigned (readyToAssign), every category's assigned, activity and available amounts (negative available means overspent), what targets still need, and account balances.",
             parameters: object(json!({ "month": { "type": "string", "description": MONTH } }), &[]),
             proposes: false,
         },
@@ -254,7 +254,7 @@ fn listed() -> Vec<Spec> {
         },
         Spec {
             name: "propose_budget_moves",
-            description: "Propose assigning or moving money between categories for one month. Use \"ready_to_assign\" as from or to for Ready to Assign. The user reviews the card and applies it.",
+            description: "Propose assigning or moving money between categories for one month. Use \"ready_to_assign\" as from or to for Unassigned. The user reviews the card and applies it.",
             parameters: object(
                 json!({
                     "month": { "type": "string", "description": MONTH },

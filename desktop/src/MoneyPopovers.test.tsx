@@ -3,7 +3,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { coverAmount, MoveMoneyPopover } from "./MoneyPopovers";
 import { AppliedChangeError } from "./useBudget";
 import { demoBudget } from "./demo";
-import { editableAmount } from "./format";
+import { editableAmount, money } from "./format";
+import { READY_TO_ASSIGN } from "./ui";
 afterEach(cleanup);
 
 it("covers overspending with all of it when the source has enough, else with everything the source has", () => {
@@ -24,6 +25,25 @@ it("opens a cover from Unassigned with what Unassigned can give of the overspend
   cleanup();
   render(<MoveMoneyPopover {...props} readyToAssign={400} />);
   expect((screen.getByLabelText("Amount") as HTMLInputElement).value).toBe(editableAmount(400));
+});
+
+it("opens Assign money with the amount empty, not with all of Unassigned for one category", () => {
+  const props = { budget: demoBudget(), anchor: { current: document.body }, source: READY_TO_ASSIGN, sourceName: "Unassigned",
+    balances: new Map<string, number>(), onMove: vi.fn(), onClose: vi.fn() };
+  render(<MoveMoneyPopover {...props} available={370000} readyToAssign={370000} />);
+  expect(screen.getByText("Assign money")).toBeTruthy();
+  expect((screen.getByLabelText("Amount") as HTMLInputElement).value).toBe("");
+  // With the amount empty, the popover says how much there is to give out.
+  expect(screen.getByText(`${money(370000)} unassigned`)).toBeTruthy();
+  // Nothing is assigned until an amount is typed.
+  fireEvent.click(screen.getByRole("button", { name: "Assign" }));
+  expect(screen.getByRole("alert").textContent).toBe("Enter an amount above zero.");
+  expect(props.onMove).not.toHaveBeenCalled();
+  cleanup();
+  // More assigned than there is: taking it back still opens with the shortfall.
+  render(<MoveMoneyPopover {...props} available={-2500} readyToAssign={-2500} />);
+  expect((screen.getByLabelText("Amount") as HTMLInputElement).value).toBe(editableAmount(2500));
+  expect(screen.queryByText(/ unassigned$/)).toBeNull();
 });
 
 it("offers save-only retries after a move was already applied, keeping its fields frozen", async () => {

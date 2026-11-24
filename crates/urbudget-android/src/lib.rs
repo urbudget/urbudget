@@ -174,8 +174,12 @@ fn dispatch(request: Request) -> Result<Value, String> {
     }
 }
 
-/// A new budget to look around in. Its names become the person's data, so they're written in
-/// the language in use when it's made (the ids stay the same in every language).
+/// A new budget to look around in, the one the desktop makes (desktop/src/demo.ts): two cash
+/// accounts and a credit card with its payment category, three groups with targets (the last is
+/// "Saving for later" here: the engine already says "Looking ahead" for something else), a handful of
+/// purchases, and one category overspent (Gifts) to try covering. Its names become the person's
+/// data, so they're written in the language in use when it's made; the ids stay the same in every
+/// language, and the apps know an older sample by `sample-checking` and `sample-market`.
 fn sample_budget(params: &Value) -> Result<domain::Budget, String> {
     let month: String = required(params, "month")?;
     if !domain::valid_month(&month) {
@@ -183,21 +187,55 @@ fn sample_budget(params: &Value) -> Result<domain::Budget, String> {
     }
     let name = optional::<String>(params, "name")?.unwrap_or_else(|| t!("Sample budget"));
     let currency = optional::<String>(params, "currency")?.unwrap_or_else(|| "SAR".into());
-    let everyday = t!("Everyday");
+    // Nothing is dated after today: a sample made on the 3rd has no purchases waiting for the 13th.
+    let today = optional::<String>(params, "today")?;
+    let last = today
+        .as_deref()
+        .and_then(|date| date.strip_prefix(&format!("{month}-")))
+        .and_then(|day| day.parse::<u32>().ok())
+        .filter(|day| (1..=31).contains(day));
+    let purchase = |id: &str, day: u32, account: &str, payee: String, amount: i64, category: &str, memo: String| {
+        json!({"id":id,"date":format!("{month}-{:02}", last.map_or(day, |last| day.min(last))),"accountId":account,"payee":payee,"memo":memo,
+            "amount":amount,"status":"cleared","splits":[{"categoryId":category,"amount":amount}],"transferAccountId":null,"transferStatus":null})
+    };
+    let (essentials, joys, ahead) = (t!("Essentials"), t!("Everyday joys"), t!("Saving for later"));
+    let market = t!("Neighborhood market");
+    let assigned: [(&str, i64); 10] = [
+        ("sample-card-payment", 150000), ("sample-rent", 500000), ("sample-groceries", 180000), ("sample-bills", 65000),
+        ("sample-transport", 50000), ("sample-dining", 120000), ("sample-coffee", 30000), ("sample-gifts", 50000),
+        ("sample-travel", 200000), ("sample-emergency", 4500000),
+    ];
     serde_json::from_value(json!({
         "schemaVersion": 2, "name": name, "currency": currency,
-        "accounts": [{"id":"sample-checking","name":t!("Checking"),"kind":"cash","openingBalance":500000,"archived":false}],
+        "accounts": [
+            {"id":"sample-checking","name":t!("Everyday account"),"kind":"cash","accountType":"checking","openingBalance":1850000,"archived":false},
+            {"id":"sample-savings","name":t!("Savings"),"kind":"cash","accountType":"savings","openingBalance":4250000,"archived":false},
+            {"id":"sample-card","name":t!("Credit card"),"kind":"credit","accountType":"creditCard","openingBalance":-150000,"archived":false}
+        ],
         "categories": [
-            {"id":"sample-groceries","name":t!("Groceries"),"group":everyday,"target":60000},
-            {"id":"sample-transport","name":t!("Transport"),"group":everyday,"target":20000},
-            {"id":"sample-emergency","name":t!("Emergency fund"),"group":t!("Savings"),"target":100000}
+            // The group every app keeps card payment categories in, under the name they all use.
+            {"id":"sample-card-payment","name":t!("Credit card"),"group":"Credit Card Payments","target":0,"paymentAccountId":"sample-card"},
+            {"id":"sample-rent","name":t!("Rent"),"group":essentials,"target":500000},
+            {"id":"sample-groceries","name":t!("Groceries"),"group":essentials,"target":180000},
+            {"id":"sample-bills","name":t!("Bills & utilities"),"group":essentials,"target":65000},
+            {"id":"sample-transport","name":t!("Getting around"),"group":essentials,"target":50000},
+            {"id":"sample-dining","name":t!("Dining out"),"group":joys,"target":120000},
+            {"id":"sample-coffee","name":t!("Coffee & snacks"),"group":joys,"target":30000},
+            {"id":"sample-gifts","name":t!("Gifts"),"group":joys,"target":50000},
+            {"id":"sample-travel","name":t!("Next adventure"),"group":ahead,"target":200000},
+            {"id":"sample-emergency","name":t!("Peace of mind"),"group":ahead,"target":1000000}
         ],
-        "assignments": [
-            {"month":month,"categoryId":"sample-groceries","amount":60000},
-            {"month":month,"categoryId":"sample-transport","amount":20000},
-            {"month":month,"categoryId":"sample-emergency","amount":100000}
-        ],
-        "transactions": [{"id":"sample-market","date":format!("{month}-01"),"accountId":"sample-checking","payee":t!("Neighborhood market"),"memo":t!("Sample purchase"),"amount":-12500,"status":"cleared","splits":[{"categoryId":"sample-groceries","amount":-12500}],"transferAccountId":null,"transferStatus":null}]
+        "assignments": assigned.iter().map(|(category, amount)| json!({"month":month,"categoryId":category,"amount":amount})).collect::<Vec<_>>(),
+        "transactions": [
+            purchase("sample-rent-paid", 2, "sample-checking", t!("Home"), -500000, "sample-rent", t!("Monthly rent")),
+            purchase("sample-market", 4, "sample-card", market.clone(), -28750, "sample-groceries", t!("The weekly shop")),
+            purchase("sample-cafe", 6, "sample-card", t!("Little café"), -2600, "sample-coffee", String::new()),
+            purchase("sample-electricity", 8, "sample-checking", t!("Electricity"), -31840, "sample-bills", String::new()),
+            purchase("sample-dinner", 10, "sample-card", t!("Dinner with friends"), -18500, "sample-dining", String::new()),
+            // More than Gifts was given: the one overspent category.
+            purchase("sample-gift", 12, "sample-checking", t!("A thoughtful something"), -57500, "sample-gifts", t!("Birthday gift")),
+            purchase("sample-market-again", 13, "sample-card", market, -19225, "sample-groceries", String::new())
+        ]
     })).map_err(|error| error.to_string())
 }
 

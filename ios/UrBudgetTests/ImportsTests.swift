@@ -256,7 +256,9 @@ final class ImportYnabTests: XCTestCase {
                                                         dateOrder: "", currency: "SAR")
         XCTAssertTrue(rebuilt.has("schemaVersion"))
         XCTAssertEqual(rebuilt.text("currency"), "SAR")
-        XCTAssertEqual(rebuilt.rows("accounts").count, budget.rows("accounts").count)
+        // The register lists accounts by their transactions, so one without any (the sample's savings) isn't in it.
+        XCTAssertEqual(rebuilt.rows("accounts").count, Set(budget.rows("transactions").map { $0.text("accountId") }).count)
+        XCTAssertEqual(rebuilt.rows("transactions").count, budget.rows("transactions").count)
         XCTAssertThrowsError(try ImportsEngine.importYnabFiles([ImportPickedFile(name: "notes.csv", data: Data("a,b\n1,2".utf8))], dateOrder: "mdy", currency: "SAR"))
     }
 

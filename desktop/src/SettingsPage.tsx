@@ -22,6 +22,8 @@ import type { Cloud } from "./cloud";
 import type { Updates } from "./updates";
 import { UpdateSetting } from "./UpdateNotice";
 import { PrivacySettings } from "./PrivacySettings";
+import { HowThisWorksRow } from "./HowThisWorks";
+import { SendFeedbackRow } from "./Feedback";
 import { list, localDateTime, msg, t, tn, type LanguageSetting } from "./i18n";
 import "./settings.css";
 
@@ -452,6 +454,8 @@ export function SettingsPage({
                   <RotateCcw size={14} /> {t("Reset layout")}
                 </button>
               </div>
+              <HowThisWorksRow />
+              <SendFeedbackRow />
             </div>
           </section>
         </>
@@ -699,7 +703,7 @@ export function SettingsPage({
               {t("Cash accounts fund your plan. Tracking accounts count toward net worth but stay outside the plan. Card purchases from funded categories move money into the card's payment category; payments use that money.")}
             </p>
             <p>
-              {t("Positive category balances roll over. Cash overspending reduces next month's Ready to Assign; credit overspending becomes card debt. Your budget is stored only on this computer and is not encrypted; your operating system protects access to the file.")}
+              {t("Positive category balances roll over. Cash overspending reduces next month's Unassigned; credit overspending becomes card debt. Your budget is stored only on this computer and is not encrypted; your operating system protects access to the file.")}
             </p>
           </section>
         </>

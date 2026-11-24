@@ -132,14 +132,17 @@ final class RepositoryTests: XCTestCase {
         let budget = try XCTUnwrap(snapshot.budget)
         let summary = try XCTUnwrap(snapshot.summary)
         let model = buildBudgetModel(budget: budget, summary: summary, month: snapshot.month)
-        XCTAssertEqual(model.groups.map(\.name), ["Everyday", "Savings"])
-        let groceries = try XCTUnwrap(model.groups[0].rows.first { $0.name == "Groceries" })
+        // The sample is the desktop's: a card's payment category, then three groups.
+        XCTAssertEqual(model.groups.map(\.name), ["Credit Card Payments", "Essentials", "Everyday joys", "Saving for later"])
+        XCTAssertEqual(model.groups[0].rows.map(\.payment), [true])
+        XCTAssertEqual(model.groups.flatMap(\.rows).filter { $0.available < 0 }.map(\.name), ["Gifts"], "One category is overspent, to try covering")
+        let groceries = try XCTUnwrap(model.groups[1].rows.first { $0.name == "Groceries" })
 
         snapshot = try await repository.command("workflow", ["action": ["type": "assignAmount", "month": .string(snapshot.month),
                                                                         "categoryId": .string(groceries.id), "amount": 70_000]])
         XCTAssertEqual(snapshot.summary?.rows("categories").first { $0.text("id") == groceries.id }?.long("assigned"), 70_000)
         snapshot = try await repository.undo()
-        XCTAssertEqual(snapshot.summary?.rows("categories").first { $0.text("id") == groceries.id }?.long("assigned"), 60_000)
+        XCTAssertEqual(snapshot.summary?.rows("categories").first { $0.text("id") == groceries.id }?.long("assigned"), 180_000)
 
         let transaction: JSON = ["id": "tx", "date": .string(Dates.today), "accountId": "sample-checking", "payee": "Corner Cafe", "memo": "",
                                  "amount": -450, "status": "uncleared", "transferAccountId": .null, "transferStatus": .null,
@@ -347,5 +350,16 @@ final class AppRatingTests: XCTestCase {
         rating.due = false
         rating.saved(closing: true, today: "2026-11-10", version: "1.0.1")
         XCTAssertFalse(rating.due, "once per version")
+    }
+}
+
+/// Settings' Send feedback row (AppFeedback): an email to support that names only the app and its version.
+final class AppFeedbackTests: XCTestCase {
+    func testItStartsAnEmailToSupportWithTheVersionInItsSubject() throws {
+        let mail = AppFeedback.mail(version: "1.0.2")
+        XCTAssertEqual(mail.scheme, "mailto")
+        let parts = try XCTUnwrap(URLComponents(url: mail, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(parts.path, "support@urbudget.app")
+        XCTAssertEqual(parts.queryItems, [URLQueryItem(name: "subject", value: "UrBudget feedback (iOS 1.0.2)")])
     }
 }

@@ -439,8 +439,9 @@ pub async fn account_sign_out(cloud: &Cloud) -> Result<Status, String> {
 
 /// Opens a page of urbudget.app in the browser, signed in as this account when there is one.
 pub async fn account_open(cloud: &Cloud, next: String) -> Result<(), String> {
+    // On Android only the pages made without checkout or account links: the policy and the guide.
     #[cfg(target_os = "android")]
-    if !matches!(next.as_str(), "/privacy/app/" | "/privacy/app/#your-choices") {
+    if !matches!(next.as_str(), "/privacy/app/" | "/privacy/app/#your-choices" | "/getting-started/app/") {
         return Err(t!("Use Google Play for your Sync subscription, or Account settings to delete your account."));
     }
     let next = if next.starts_with('/') && !next.starts_with("//") { next } else { "/".into() };

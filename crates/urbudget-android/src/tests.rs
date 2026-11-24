@@ -216,8 +216,65 @@ fn invalid_mutations_are_rejected_and_defaults_are_valid() {
         demo,
         json!({"month":"2026-10","asOfMonth":"2026-10"}),
     ));
-    assert_eq!(summary["readyToAssign"], 320000);
-    assert_eq!(summary["accounts"][0]["balance"], 487500);
+    assert_eq!(summary["readyToAssign"], 255000);
+    assert_eq!(summary["accounts"][0]["balance"], 1260660);
+}
+
+/// The phones' sample is the desktop's (desktop/src/demo.ts): a card with its payment category,
+/// several groups with targets, a handful of purchases and one overspent category.
+#[test]
+fn the_sample_budget_has_a_card_three_groups_and_one_overspent_category() {
+    let demo = value(call("sampleBudget", Value::Null, json!({"month":"2026-10","currency":"USD"})));
+    let ids = |list: &str| demo[list].as_array().unwrap().iter().map(|row| row["id"].as_str().unwrap().to_owned()).collect::<Vec<_>>();
+    // The apps know a sample made before this one by these two ids.
+    assert_eq!(ids("accounts"), ["sample-checking", "sample-savings", "sample-card"]);
+    assert!(ids("transactions").contains(&"sample-market".to_owned()));
+    assert_eq!(demo["transactions"].as_array().unwrap().len(), 7);
+    assert_eq!(demo["accounts"][2]["kind"], "credit");
+    let payment = &demo["categories"][0];
+    assert_eq!((payment["paymentAccountId"].as_str(), payment["group"].as_str()), (Some("sample-card"), Some("Credit Card Payments")));
+    let mut groups = Vec::new();
+    for category in demo["categories"].as_array().unwrap() {
+        let group = category["group"].as_str().unwrap();
+        if !groups.contains(&group) {
+            groups.push(group);
+        }
+        assert!(category["paymentAccountId"].is_string() || category["target"].as_i64().unwrap() > 0, "{category}");
+    }
+    assert_eq!(groups, ["Credit Card Payments", "Essentials", "Everyday joys", "Saving for later"]);
+    assert_eq!(demo["transactions"][5]["date"], "2026-10-12");
+
+    let summary = value(call("calculate", demo.clone(), json!({"month":"2026-10","asOfMonth":"2026-10"})));
+    let available = |id: &str| summary["categories"].as_array().unwrap().iter().find(|row| row["id"] == id).unwrap()["available"].as_i64().unwrap();
+    let overspent = summary["categories"].as_array().unwrap().iter().filter(|row| row["available"].as_i64().unwrap() < 0).map(|row| row["id"].as_str().unwrap()).collect::<Vec<_>>();
+    assert_eq!(overspent, ["sample-gifts"]);
+    assert_eq!(available("sample-gifts"), -7500);
+    assert_eq!(available("sample-groceries"), 180000 - 28750 - 19225);
+    // What was bought on the card is set aside to pay it, with what it already owed.
+    assert_eq!(available("sample-card-payment"), 150000 + 28750 + 2600 + 18500 + 19225);
+    let balance = |id: &str| summary["accounts"].as_array().unwrap().iter().find(|row| row["id"] == id).unwrap()["balance"].as_i64().unwrap();
+    assert_eq!(balance("sample-savings"), 4250000);
+    assert_eq!(balance("sample-card"), -(150000 + 28750 + 2600 + 18500 + 19225));
+
+    // Made early in the month, nothing is dated after today.
+    let early = value(call("sampleBudget", Value::Null, json!({"month":"2026-10","today":"2026-10-05"})));
+    let dates = early["transactions"].as_array().unwrap().iter().map(|row| row["date"].as_str().unwrap().to_owned()).collect::<Vec<_>>();
+    assert_eq!(dates, ["2026-10-02", "2026-10-04", "2026-10-05", "2026-10-05", "2026-10-05", "2026-10-05", "2026-10-05"]);
+    // Another month's today leaves the sample's own days.
+    let other = value(call("sampleBudget", Value::Null, json!({"month":"2026-10","today":"2026-11-02"})));
+    assert_eq!(other["transactions"], demo["transactions"]);
+
+    // It still goes out as YNAB's export files and comes back, card included. The register lists
+    // accounts by their transactions, so the savings account, which has none, isn't in it.
+    let files = ["exportRegister", "exportPlan"].map(|method| value(call(method, demo.clone(), json!({}))).as_str().unwrap().as_bytes().to_vec());
+    let rebuilt = value(call(
+        "importYnabFiles",
+        Value::Null,
+        json!({"files":[{"name":"Sample - Register.csv","bytes":files[0]},{"name":"Sample - Plan.csv","bytes":files[1]}],"dateOrder":"","currency":"USD"}),
+    ));
+    assert_eq!(rebuilt["accounts"].as_array().unwrap().len(), 2, "{rebuilt}");
+    assert_eq!(rebuilt["transactions"].as_array().unwrap().len(), 7);
+    assert_eq!(rebuilt["categories"].as_array().unwrap().len(), 10);
 }
 
 #[test]

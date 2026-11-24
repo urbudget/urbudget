@@ -173,7 +173,7 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                                 reconcile: (JSONObject) -> Unit, editSchedule: (JSONObject?) -> Unit, vm: BudgetViewModel,
                                 bar: @Composable RowScope.() -> Unit, setDockHidden: (Boolean) -> Unit,
                                 initialFrom: String = "", initialThrough: String = "", initialSearch: String = "", payCard: (String) -> Unit = {}, openAccount: (String) -> Unit = {},
-                                openId: String? = null, showing: Showing? = null) {
+                                openId: String? = null, showing: Showing? = null, addAccount: () -> Unit = {}) {
     val currency = budget.text("currency")
     val monthFirst = budget.text("dateFormat") == "mdy"
     var searching by rememberSaveable { mutableStateOf(initialSearch.isNotEmpty()) }
@@ -394,7 +394,10 @@ internal fun TransactionsScreen(budget: JSONObject, summary: JSONObject?, accoun
                 else if (list.isEmpty()) item(key = "empty", contentType = "empty") {
                     if (search.isNotBlank() || activeFilters > 0) EmptyState(stringResource(R.string.register_no_matches), stringResource(R.string.register_no_matches_detail), stringResource(R.string.filters_clear)) {
                         search = ""; status = ""; flagFilter = ""; from = ""; through = ""; minimum = ""; maximum = ""; order = "newest"
-                    } else EmptyState(stringResource(R.string.register_empty_title), stringResource(R.string.register_empty_detail), stringResource(R.string.transaction_add), add)
+                    }
+                    // A transaction needs an account to go in: with none open, that's what's asked for.
+                    else if (budget.rows("accounts").none { !it.optBoolean("archived") }) EmptyState(stringResource(R.string.accounts_empty_title), stringResource(R.string.accounts_empty_detail), stringResource(R.string.account_add), addAccount)
+                    else EmptyState(stringResource(R.string.register_empty_title), stringResource(R.string.register_empty_detail), stringResource(R.string.transaction_add), add)
                 }
                 items(list.orEmpty(), key = { line -> when (line) { is DayLine -> "d:${line.date}"; is TxLine -> line.id } },
                     contentType = { if (it is DayLine) 0 else 1 }) { line ->

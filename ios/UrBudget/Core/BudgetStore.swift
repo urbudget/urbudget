@@ -97,7 +97,9 @@ actor BudgetRepository {
     /// `template`: a category template's id (`BudgetTemplate`); without one a new budget has no categories.
     func create(name: String, currency: String, sample: Bool, localOnly: Bool = false, template: String? = nil,
                 adjust: (@Sendable (inout JSON) -> Void)? = nil) throws -> BudgetSnapshot {
-        var params: JSON = ["name": .string(name.trimmingCharacters(in: .whitespaces)), "currency": .string(currency.uppercased()), "month": .string(month)]
+        // "today": the sample dates none of its purchases after it.
+        var params: JSON = ["name": .string(name.trimmingCharacters(in: .whitespaces)), "currency": .string(currency.uppercased()), "month": .string(month),
+                            "today": .string(Dates.today)]
         if let template, !sample { params["template"] = .string(template) }
         var budget = try NativeCore.engine(sample ? "sampleBudget" : "defaultBudget", params: params)
         // Marked as the desktop marks its sample, so Budget offers the way back out of it.

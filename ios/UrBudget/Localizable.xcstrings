@@ -391,6 +391,26 @@
         }
       }
     },
+    "Send feedback" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إرسال رأيك"
+          }
+        }
+      }
+    },
+    "Email %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "راسلنا على ⁨%@⁩"
+          }
+        }
+      }
+    },
     "Your library is empty." : {
       "localizations" : {
         "ar" : {
@@ -31310,6 +31330,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الرمز: الذي أنشأته للتو."
+          }
+        }
+      }
+    },
+    "How this works" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طريقة العمل"
+          }
+        }
+      }
+    },
+    "A short guide: envelope budgeting in five steps and a weekly routine" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "دليل قصير: الميزانية بالمظاريف في خمس خطوات وروتين أسبوعي"
           }
         }
       }

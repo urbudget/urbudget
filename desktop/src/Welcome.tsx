@@ -8,6 +8,7 @@ import { YnabFileImport } from "./YnabFileImport";
 import { YnabImport } from "./YnabImport";
 import { demoBudget } from "./demo";
 import { dateFormats, errorText } from "./format";
+import { HowThisWorksLink } from "./HowThisWorks";
 import { localeDefaults } from "./locale";
 import { newDraft, readDraft, readMark, writeDraft } from "./setup";
 import { useToast } from "./ui";
@@ -163,6 +164,7 @@ export function Welcome({
             {ynab ? t("Set it up step by step instead") : t("I'm coming from YNAB")}
           </button>
         )}
+        <HowThisWorksLink />
       </p>
       {ynab && (
         <FromYnab
@@ -377,6 +379,8 @@ export function FirstRunWelcome({
         <button className="link-button" disabled={busy} onClick={() => setExisting(true)}>
           {t("I already have a budget")}
         </button>
+        {/* The method on urbudget.app, for anyone who wants it before starting. */}
+        <HowThisWorksLink />
       </p>
     </div>
   );

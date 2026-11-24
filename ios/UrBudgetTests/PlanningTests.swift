@@ -303,4 +303,15 @@ final class CoverAmountTests: XCTestCase {
         XCTAssertEqual(coverAmount(12_000, has: -3_000), 12_000)
         XCTAssertEqual(coverAmount(12_000, has: nil), 12_000)
     }
+
+    func testAssigningFromUnassignedOpensWithNoAmount() {
+        // Not all of Unassigned for one category.
+        XCTAssertNil(moveStartAmount(fromUnassigned: true, start: 370_000, cover: nil))
+        XCTAssertNil(moveStartAmount(fromUnassigned: true, start: 0, cover: nil))
+        // More assigned than there is: taking it back still opens with what's short.
+        XCTAssertEqual(moveStartAmount(fromUnassigned: true, start: -2_500, cover: nil), 2_500)
+        // Moving from a category still opens with what it has, and covering with what the source gives.
+        XCTAssertEqual(moveStartAmount(fromUnassigned: false, start: 8_000, cover: nil), 8_000)
+        XCTAssertEqual(moveStartAmount(fromUnassigned: false, start: -12_000, cover: 5_000), 5_000)
+    }
 }

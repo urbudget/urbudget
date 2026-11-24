@@ -13,7 +13,12 @@ vi.mock("./bridge", async () => {
     },
   };
 });
+vi.mock("./cloud", async (original) => {
+  const real = await original<typeof import("./cloud")>();
+  return { ...real, cloud: { ...real.cloud, open: vi.fn(async () => {}) } };
+});
 import { api } from "./bridge";
+import { cloud } from "./cloud";
 import { FirstRunWelcome, SampleBanner, Welcome, isBlank, isUntouched, openSample } from "./Welcome";
 import { localeDefaults } from "./locale";
 import { readDraft, writeMark } from "./setup";
@@ -69,7 +74,7 @@ it("knows a first launch's budget from one someone set up", () => {
   expect(isBlank({ ...blank(), categories: [{ id: "c", name: "Rent", group: "Bills", target: 0 }] })).toBe(false);
 });
 
-it("gives an empty budget one button into the walkthrough, with the sample and YNAB as quiet links", () => {
+it("gives an empty budget one button into the walkthrough, with the sample, YNAB and the guide as quiet links", () => {
   const onSetup = vi.fn();
   const view = render(welcome({ onSetup }));
   // The one filled button.
@@ -78,6 +83,8 @@ it("gives an empty budget one button into the walkthrough, with the sample and Y
   expect(onSetup).toHaveBeenCalledOnce();
   expect(screen.getByRole("button", { name: "Look around a sample" }).className).toBe("link-button");
   expect(screen.getByRole("button", { name: "I'm coming from YNAB" }).className).toBe("link-button");
+  fireEvent.click(screen.getByRole("button", { name: "How this works" }));
+  expect(cloud.open).toHaveBeenCalledWith("/getting-started/");
   // A budget the walkthrough made by skipping is offered the rest of it.
   writeMark("b1", { card: true });
   view.unmount();
@@ -172,7 +179,7 @@ it("leaves a sample for an active budget when its original budget is in Trash", 
   await vi.waitFor(() => expect(open).toHaveBeenCalledWith("mine"));
 });
 
-it("opens a first launch on one button, the device's currency and date format, and two quiet links", () => {
+it("opens a first launch on one button, the device's currency and date format, and three quiet links", () => {
   const onSetup = vi.fn();
   vi.spyOn(navigator, "languages", "get").mockReturnValue(["en-US"]);
   render(firstRun({ onSetup }));
@@ -188,6 +195,9 @@ it("opens a first launch on one button, the device's currency and date format, a
   expect(screen.queryByText("Account and Sync panels")).toBeNull();
   expect(screen.getByRole("button", { name: "Look around a sample" }).className).toBe("link-button");
   expect(screen.getByRole("button", { name: "I already have a budget" }).className).toBe("link-button");
+  // The method is a link away, on urbudget.app, for anyone who wants it before starting.
+  fireEvent.click(screen.getByRole("button", { name: "How this works" }));
+  expect(cloud.open).toHaveBeenCalledWith("/getting-started/");
 
   fireEvent.click(screen.getByRole("button", { name: "Create my budget" }));
   // The walkthrough opens on a draft; nothing is in the library.

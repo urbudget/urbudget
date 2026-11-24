@@ -324,3 +324,13 @@ internal fun EmptyState(title: String, detail: String, action: String? = null, o
         if (action != null && onAction != null) PrimaryButton(action, onAction, Modifier.padding(top = 6.dp))
     }
 }
+
+/** A second prompt under an [EmptyState]: no mark and an outlined button, so the first keeps the one filled action. */
+@Composable
+internal fun QuietPrompt(title: String, detail: String, action: String, onAction: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 36.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, color = ur.text, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text(detail, style = MaterialTheme.typography.bodyMedium, color = ur.muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        SecondaryButton(action, onAction, Modifier.padding(top = 6.dp))
+    }
+}

@@ -10,6 +10,8 @@ import sharp from "sharp";
 import { ORIGIN, indexablePages } from "../scripts/sitemap.mjs";
 // @ts-expect-error: a plain JavaScript script, run by node
 import { appPrivacyHtml } from "../scripts/app-privacy.mjs";
+// @ts-expect-error: a plain JavaScript script, run by node
+import { appGuideHtml } from "../scripts/app-guide.mjs";
 import { noteSections } from "../public/assets/release-notes.js";
 
 const pub = resolve(__dirname, "..", "public");
@@ -111,6 +113,15 @@ describe("site", () => {
     expect(app).not.toMatch(/href="(?:https:\/\/urbudget\.app)?\/(?:account|buy|pricing|download)\//);
     expect(app).toContain('id="assistant-reports"');
     expect(app).toContain('id="your-choices"');
+  });
+  it("keeps the phone apps' guide in sync without website navigation or any link", () => {
+    const app = read("getting-started/app/index.html");
+    expect(app.replace(/\r\n/g, "\n"), "run node scripts/app-guide.mjs after editing the guide")
+      .toBe(appGuideHtml(read("getting-started/index.html")).replace(/\r\n/g, "\n"));
+    expect(app).not.toMatch(/<(?:nav|script|a)\b/);
+    expect(app).not.toMatch(/pricing|\/account|\/download/);
+    expect(app).toContain("Five steps to set it up");
+    expect(app).toContain("A weekly routine");
   });
   it("lists every indexable page in the sitemap, and nothing else", () => {
     const listed = [...read("sitemap.xml").matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]).sort();

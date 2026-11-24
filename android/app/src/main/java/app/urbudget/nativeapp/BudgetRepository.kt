@@ -194,10 +194,14 @@ class BudgetRepository(
     suspend fun create(name: String, currency: String, sample: Boolean, localOnly: Boolean = sample, template: String? = null): BudgetSnapshot = mutex.withLock {
         val params = JSONObject().put("name", name.trim()).put("currency", currency.uppercase()).put("month", month)
         if (!sample && template != null) params.put("template", template)
+        // The sample dates none of its purchases after today.
+        if (sample) params.put("today", java.time.LocalDate.now().toString())
         val value = call(if (sample) "sampleBudget" else "defaultBudget", null, params) as? JSONObject
             ?: error(Words[R.string.model_invalid_budget])
         // Marked as the desktop marks its sample, so Budget offers the way back out of it.
         if (sample) value.put("sample", JSONObject())
+        // Dates and numbers as the device writes them, as the desktop and iPhone start a budget.
+        DeviceFormats.applyTo(value, DeviceFormats.deviceLocale())
         persist(value, retainPrevious = true, createNew = true, localOnly = localOnly)
     }
 

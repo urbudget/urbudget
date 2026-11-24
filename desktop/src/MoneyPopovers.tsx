@@ -16,7 +16,8 @@ export function coverAmount(overspent: number, has: number | null | undefined): 
 
 /**
  * Move funds into or out of a category (or assign unassigned money).
- * `source` is a category id or READY_TO_ASSIGN; `available` is its balance. Covering an overspent
+ * `source` is a category id or READY_TO_ASSIGN; `available` is its balance. Assigning unassigned
+ * money opens with the amount empty, not with all of it for one category. Covering an overspent
  * category opens with as much of the overspending as the place it's taken from can give
  * (coverAmount), and choosing another place sets the amount again, until one has been typed.
  */
@@ -48,7 +49,9 @@ export function MoveMoneyPopover({
   const covered = (from: string | null) => coverAmount(overspent, from == null ? null : withReady.get(from) ?? 0);
   const [direction, setDirection] = useState<"out" | "in">(available < 0 ? "in" : "out");
   const [other, setOther] = useState<string | null>(available < 0 ? READY_TO_ASSIGN : null);
-  const [amount, setAmount] = useState(() => editableAmount(overspent > 0 ? covered(available < 0 ? READY_TO_ASSIGN : null) : Math.abs(available)));
+  // Assigning from Unassigned starts empty: all of it rarely belongs in one category.
+  const [amount, setAmount] = useState(() =>
+    fromReady && available >= 0 ? "" : editableAmount(overspent > 0 ? covered(available < 0 ? READY_TO_ASSIGN : null) : Math.abs(available)));
   // Until an amount is typed, a new place to take from puts in what it can give.
   const [typed, setTyped] = useState(false);
   const [error, setError] = useState("");
@@ -92,6 +95,10 @@ export function MoveMoneyPopover({
         }}
       >
         <strong className="popover-title">{title}</strong>
+        {/* The amount starts empty, so say how much there is to give out. */}
+        {fromReady && readyToAssign > 0 && (
+          <small className="popover-hint">{t("{amount} unassigned", { amount: money(readyToAssign) })}</small>
+        )}
         <fieldset disabled={busy || !!retrySave} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: "grid", gap: 12 }}>
         {!fromReady && (
           <div className="segmented small" role="radiogroup" aria-label={t("Direction")}>
@@ -108,6 +115,7 @@ export function MoveMoneyPopover({
           <input
             autoFocus
             inputMode="decimal"
+            placeholder="0.00"
             value={amount}
             onFocus={(e) => e.currentTarget.select()}
             onChange={(e) => { setAmount(e.target.value); setTyped(true); }}

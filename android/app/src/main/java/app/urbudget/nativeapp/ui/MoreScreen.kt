@@ -5,17 +5,23 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.KeyboardReturn
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.res.stringResource
 import app.urbudget.nativeapp.AppLanguage
+import app.urbudget.nativeapp.BuildConfig
 import app.urbudget.nativeapp.R
 import app.urbudget.nativeapp.Words
 import app.urbudget.nativeapp.BudgetViewModel
@@ -238,7 +244,10 @@ private fun SettingsPage(navigate: (String) -> Unit, budget: JSONObject, vm: Bud
         item {
             ListCard {
                 ListRow(stringResource(R.string.page_library), subtitle = stringResource(R.string.page_library_detail), icon = Icons.Outlined.FolderOpen, onClick = { navigate("Budget library") }, divider = true)
-                ListRow(stringResource(R.string.page_account_sync), subtitle = stringResource(R.string.page_account_sync_detail), icon = Icons.Outlined.CloudSync, onClick = { navigate("Account & sync") })
+                ListRow(stringResource(R.string.page_account_sync), subtitle = stringResource(R.string.page_account_sync_detail), icon = Icons.Outlined.CloudSync, onClick = { navigate("Account & sync") }, divider = true)
+                HowThisWorksRow(divider = true) { vm.service("account_open", JSONObject().put("next", GUIDE_PATH)) }
+                FeedbackRow(divider = true)
+                RateRow()
             }
         }
         item { SectionTitle(stringResource(R.string.settings_privacy_data)) }
@@ -250,6 +259,50 @@ private fun SettingsPage(navigate: (String) -> Unit, budget: JSONObject, vm: Bud
     }
     if (dialog == "budget") BudgetSettingsDialog(budget, vm) { dialog = "" }
     if (dialog == "flags") FlagNamesDialog(budget, vm) { dialog = "" }
+}
+
+/** The getting-started guide as the phone apps open it: urbudget.app's copy without site navigation, checkout or account links. */
+internal const val GUIDE_PATH = "/getting-started/app/"
+
+/** Settings' way to the guide; the welcome screen has a quiet link to the same page. */
+@Composable
+internal fun HowThisWorksRow(divider: Boolean = false, open: () -> Unit) =
+    ListRow(stringResource(R.string.help_how_this_works), subtitle = stringResource(R.string.help_how_this_works_detail), icon = Icons.AutoMirrored.Outlined.HelpOutline, onClick = open, divider = divider)
+
+/** Where Settings sends people outside the app: the support address and UrBudget's page on Google Play. */
+internal object AppLinks {
+    const val SUPPORT = "support@urbudget.app"
+    /** The released app's id whatever build this is: a debug or preview build's own id has no page. */
+    private const val PLAY_ID = "app.urbudget"
+    const val PLAY_APP = "market://details?id=$PLAY_ID"
+    const val PLAY_WEB = "https://play.google.com/store/apps/details?id=$PLAY_ID"
+
+    /** A new email to support that says only which app and version it's from. Its subject stays in English for whoever reads it. */
+    fun feedbackMail(version: String) =
+        "mailto:$SUPPORT?subject=" + java.net.URLEncoder.encode("UrBudget feedback (Android $version)", "UTF-8").replace("+", "%20")
+}
+
+/** Starts an email to support. With no mail app on the phone the address is copied instead, and a message says so. */
+@Composable
+internal fun FeedbackRow(divider: Boolean = false) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val toast = LocalToast.current
+    val copied = stringResource(R.string.feedback_no_mail, AppLinks.SUPPORT)
+    ListRow(stringResource(R.string.feedback_title), subtitle = stringResource(R.string.feedback_detail, AppLinks.SUPPORT), icon = Icons.Outlined.MailOutline, divider = divider, onClick = {
+        runCatching { context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse(AppLinks.feedbackMail(BuildConfig.VERSION_NAME)))) }
+            .onFailure { clipboard.setText(AnnotatedString(AppLinks.SUPPORT)); toast(copied, false) }
+    })
+}
+
+/** Opens UrBudget's page on Google Play, where a review is written: in the Play app, or in a browser without it. */
+@Composable
+internal fun RateRow(divider: Boolean = false) {
+    val context = LocalContext.current
+    ListRow(stringResource(R.string.rate_title), subtitle = stringResource(R.string.rate_detail), icon = Icons.Outlined.StarOutline, divider = divider, onClick = {
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AppLinks.PLAY_APP)).setPackage("com.android.vending")) }
+            .recoverCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AppLinks.PLAY_WEB))) }
+    })
 }
 
 /** As the desktop's Privacy & data: the switch for the anonymous usage counts (UsageCounts), then the policy. */

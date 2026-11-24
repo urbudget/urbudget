@@ -228,7 +228,9 @@ internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: Budget
     val existingKind = original?.text("kind")?.ifBlank { null }
     var type by remember { mutableStateOf(if (original == null) "checking" else AccountTypes.forEditing(original, balanceNow)) }
     val kind = AccountTypes.kindFor(type)
-    var balance by remember { mutableStateOf(amountText(original?.optLong("openingBalance") ?: 0)) }
+    // A new account's balance starts empty, as on iPhone: a "0.00" already there would have the typed
+    // balance added after it ("0.003500"). Left empty, it's saved as 0.
+    var balance by remember { mutableStateOf(original?.let { amountText(it.optLong("openingBalance")) } ?: "") }
     // A card's limit: the credit left shows on the account, and its texts' credit left gives what's owed.
     var limit by remember { mutableStateOf(smsCreditLimit(original)?.let(::amountText) ?: "") }
     var note by remember { mutableStateOf(original?.text("note") ?: "") }
@@ -262,7 +264,7 @@ internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: Budget
         runCatching {
             requireCurrentBudget(openedBudget, vm)
             require(name.isNotBlank()) { Words[R.string.account_name_required] }
-            val opening = amountValue(balance)
+            val opening = amountValue(balance.ifBlank { "0" })
             // Only tracking accounts can stay out of net worth.
             val counted = kind != "tracking" || netWorth
             // Saved only when touched; null terms remove them.
@@ -292,9 +294,10 @@ internal fun AccountDialog(original: JSONObject?, budget: JSONObject, vm: Budget
         Notice(when (kind) { "cash" -> stringResource(R.string.account_kind_cash_help); "credit" -> stringResource(R.string.account_kind_credit_help); else -> stringResource(R.string.account_kind_tracking_help) },
             tone = "info", icon = iconForType(type, kind))
         Field(balance, { balance = it }, if (original == null) stringResource(R.string.account_current_balance, budget.text("currency")) else stringResource(R.string.account_opening_balance, budget.text("currency")), true)
-        Text(listOfNotNull(if (AccountTypes.isLiability(type)) stringResource(R.string.account_owed_negative) else if (original == null) stringResource(R.string.account_debt_negative) else null,
-            if (original == null) null else stringResource(R.string.account_opening_changes_history)).joinToString(" "),
-            style = MaterialTheme.typography.bodySmall, color = ur.muted)
+        // How to write what's owed, on an account that is a debt; a checking account's form doesn't mention debt.
+        val balanceHelp = listOfNotNull(if (AccountTypes.isLiability(type)) stringResource(R.string.account_owed_negative) else null,
+            if (original == null) null else stringResource(R.string.account_opening_changes_history)).joinToString(" ")
+        if (balanceHelp.isNotEmpty()) Text(balanceHelp, style = MaterialTheme.typography.bodySmall, color = ur.muted)
         if (kind == "credit") {
             Field(limit, { limit = it }, stringResource(R.string.account_credit_limit, budget.text("currency")), true)
             Text(stringResource(R.string.account_credit_limit_help), style = MaterialTheme.typography.bodySmall, color = ur.muted)
