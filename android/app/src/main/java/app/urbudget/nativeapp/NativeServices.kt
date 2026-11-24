@@ -65,6 +65,13 @@ object NativeServices {
             val named = android.provider.Settings.Global.getString(context.contentResolver, "device_name")?.takeIf { it.isNotBlank() }
             android.system.Os.setenv("COMPUTERNAME", named ?: android.os.Build.MODEL, true)
         }
+        // A copy with a debug engine (-PrustDebug) on a phone attached to the Mac talks to the
+        // development server there, as the iPhone's debug copy does: `adb reverse tcp:8795 tcp:8795`,
+        // then `adb shell setprop debug.urbudget.api http://127.0.0.1:8795`.
+        if (BuildConfig.RUST_DEBUG) runCatching {
+            val server = ProcessBuilder("getprop", "debug.urbudget.api").start().inputStream.bufferedReader().use { it.readText().trim() }
+            if (server.startsWith("http://127.0.0.1:") || server.startsWith("http://localhost:")) android.system.Os.setenv("URBUDGET_API", server, true)
+        }
         decode(NativeBridge.initialize(context.applicationContext, directory.absolutePath))
         ready = true
         application = context.applicationContext

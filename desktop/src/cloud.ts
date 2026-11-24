@@ -59,6 +59,8 @@ export type CloudStatus = {
     recovery?: boolean;
     /** This computer holds a recovery code nobody has said they saved (`syncRecoveryUnsaved`). */
     recoveryUnsaved?: boolean;
+    /** Sync was reset on another device since this computer last synced, and it hasn't been added again. */
+    resetElsewhere?: boolean;
   };
   site: string;
   library?: LibrarySnapshot;

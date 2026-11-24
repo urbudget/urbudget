@@ -61,6 +61,21 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it("reads the list again after each sync pass, so a device cut off from another one leaves it", async () => {
+  status = syncing();
+  lists = [[mac, phone], [mac]];
+  const page = render(view(state()));
+  expect(await rows()).toHaveLength(2);
+  expect(commands("sync_devices")).toHaveLength(1);
+  // The same pass again asks nothing more.
+  page.rerender(view(state()));
+  expect(commands("sync_devices")).toHaveLength(1);
+  status = syncing([], {}, { at: new Date().toISOString() });
+  page.rerender(view(state()));
+  await waitFor(async () => expect(await rows()).toHaveLength(1));
+  expect(commands("sync_devices")).toHaveLength(2);
+});
+
 it("lists the devices that sync: this computer, when the others last synced, and one with no name", async () => {
   status = syncing();
   render(view(state()));

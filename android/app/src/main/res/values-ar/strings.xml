@@ -1479,6 +1479,7 @@
     <string name="library_open_now">مفتوحة الآن</string>
     <string name="library_file_missing">الملف مفقود</string>
     <string name="library_on_device">على هذا الجهاز</string>
+    <string name="library_kept_copy">نسخة محفوظة. اضغط مطولًا لاستعادتها.</string>
     <string name="library_open_chip">مفتوحة</string>
     <string name="common_open">فتح</string>
     <string name="library_delete_local">حذف الميزانية المحلية</string>
@@ -1617,6 +1618,7 @@
     <string name="cloud_new_recovery_code">رمز استرداد جديد</string>
     <string name="cloud_reset_sync">إعادة تعيين المزامنة</string>
     <string name="cloud_locked_title">افتح قفل المزامنة على هذا الجهاز</string>
+    <string name="cloud_locked_reset">أُعيد تعيين المزامنة على جهاز آخر. أضِف هذا الجهاز من جديد لتستمر المزامنة.</string>
     <string name="cloud_locked_detail">على جهاز تعمل عليه المزامنة، افتح «الحساب والمزامنة» واختر «إضافة جهاز»، ثم امسح الرمز الذي يعرضه.</string>
     <string name="cloud_scan_code">مسح رمز</string>
     <string name="cloud_unlock_field_code">رمز من جهاز آخر، أو رمز الاسترداد</string>

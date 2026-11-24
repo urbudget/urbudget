@@ -240,12 +240,24 @@ try {
     assert.equal((await sync(b)).recoveryUnsaved, true); await b.call("sync_recovery_saved");
     await wake(a); await wake(c);
     for (const d of [a, c]) assert.equal((await sync(d)).unlocked, false, d.name);
+    // The devices the reset cut off say why they ask to unlock, and leave the account's list of
+    // devices until they sync again.
+    for (const d of [a, c]) assert.equal((await sync(d)).resetElsewhere, true, d.name);
+    assert.equal((await sync(b)).resetElsewhere, false);
+    // A locked device keeps asking the server what changed; that doesn't put it back in the list.
+    await wake(a); await wake(c);
+    const listed = async () => (await b.call("sync_devices")).devices.map(d => d.name).sort();
+    assert.deepEqual(await listed(), [b.name]);
     // The key that approval carried is retired, and so is everything that made or held it.
     await assert.rejects(c.call("sync_unlock", { secret: old.code }), /expired or was already used/);
     await assert.rejects(c.call("sync_unlock", { secret: recoveryCode }), /isn't the recovery code for this account/);
     assert.deepEqual(await c.call("sync_unlock", { secret: reset.recoveryCode }), { created: false, protocol: 2 });
+    await wake(c); assert.equal((await sync(c)).resetElsewhere, false);
+    assert.deepEqual(await listed(), [b.name, c.name].sort());
     const offered = await b.call("sync_pair_offer");
     assert.deepEqual(await a.call("sync_unlock", { secret: offered.code }), { created: false, protocol: 2 });
+    await wake(a); assert.equal((await sync(a)).resetElsewhere, false);
+    assert.deepEqual(await listed(), [a.name, b.name, c.name].sort());
     recoveryCode = reset.recoveryCode;
   });
 
@@ -258,6 +270,8 @@ try {
     assert.deepEqual(before.map(e => e.name), shared);
     // The third device has the budgets and nothing that unlocks sync: "Can't unlock?" resets.
     await c.call("sync_lock"); assert.equal((await sync(c)).unlocked, false);
+    // Locked by hand, it isn't told of a reset that never was.
+    await wake(c); assert.equal((await sync(c)).resetElsewhere, false);
     const reset = await c.call("sync_reset");
     assert.match(reset.recoveryCode, CODE); assert.equal((await sync(c)).unlocked, true);
     // Nothing more is asked of it: each budget is the same one, under a new identity, uploaded.

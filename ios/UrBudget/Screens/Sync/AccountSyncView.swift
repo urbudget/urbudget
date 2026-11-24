@@ -96,7 +96,9 @@ struct AccountSyncView: View {
         // A renewal, refund or approved purchase arrived while the screen is open.
         .onChange(of: appStore.deliveries) { Task { await loadOverview() } }
         .task(id: "\(signedIn)|\(sync.unlocked)") { await loadKeyInfo() }
-        .task(id: "\(signedIn)|\(sync.unlocked)|\(devicesAdded)") { await loadDevices() }
+        // Asked again after each sync pass while the screen is open: a device added or cut off
+        // from another one, and when each last synced.
+        .task(id: "\(signedIn)|\(sync.unlocked)|\(devicesAdded)|\(status["sync"]["last"].text("at"))") { await loadDevices() }
         // A code the phone's own Camera opened the app with. Signed out, it waits for the sign-in.
         .task(id: "\(sync.scannedLink ?? "")|\(signedIn)|\(sync.unlocked)") { takeScannedLink() }
         // The key goes to whoever shows that code, so the person says yes first.
@@ -109,6 +111,9 @@ struct AccountSyncView: View {
         // A code made here stays on this device until it's confirmed saved, so it's shown again
         // after the app was closed on it or an answer was lost.
         .task(id: SyncKey.recoveryUnsaved(status)) { await showUnsavedCode() }
+        // What the screen last said ("Device added.") is about the state it was in: once sync
+        // locks or unlocks here, it no longer holds.
+        .onChange(of: sync.unlocked) { notice = nil }
         .sheet(item: $recoveryCode) { shown in
             RecoveryCodeSheet(code: shown.code) {
                 _ = try await store.service("sync_recovery_saved")
@@ -471,6 +476,11 @@ struct AccountSyncView: View {
         let label: LocalizedStringKey = passphrase
             ? "Code from another device, your recovery code, or your sync passphrase"
             : "Code from another device, or your recovery code"
+        // Another device reset sync: why this one asks to unlock when it used to sync.
+        if SyncKey.resetElsewhere(status) {
+            Text("Sync was reset on another device. Add this one again to keep syncing.")
+                .font(.subheadline).listRowSeparator(.hidden)
+        }
         Text("To unlock sync here, open Account & sync on a device that already syncs and choose Add a device. Then scan the code it shows.")
             .font(.subheadline).foregroundStyle(Color.secondary)
         Button { scanning = true } label: {

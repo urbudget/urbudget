@@ -348,11 +348,12 @@ private fun BudgetContent(vm: BudgetViewModel, state: BudgetUiState) {
     // A notification's page, such as Bank messages when texts need the user.
     val requested by PageRequests.page.collectAsStateWithLifecycle()
     // Taken only once loading is over: at a cold start the budget's arrival replaces this group (the
-    // key() above), and a page opened before then would be lost. With no budget there's nothing to open.
+    // key() above), and a page opened before then would be lost. With no budget only Account & sync
+    // is there to open: a new phone has none yet when its camera opens the app with a sync code.
     LaunchedEffect(requested, state.loading) {
         val page = requested ?: return@LaunchedEffect
         if (state.loading) return@LaunchedEffect
-        if (state.budget != null) openPage(page)
+        if (state.budget != null) openPage(page) else if (page == "Account & sync") morePage = page
         PageRequests.page.value = null
     }
     fun openChildPage(page: String) {

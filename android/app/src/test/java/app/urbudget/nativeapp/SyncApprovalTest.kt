@@ -168,8 +168,12 @@ class SyncApprovalTest {
             {"id":"c","name":null,"addedAt":"2026-11-03T08:00:00.000Z","lastSeenAt":null,"current":false},
             {"id":"d","name":"  ","addedAt":null,"lastSeenAt":"2026-11-21T12:00:00.000Z","current":false}]}"""))
         assertEquals("in the engine's order, this phone first", listOf("a", "b", "c", "d"), devices.map { it.id })
-        assertEquals(listOf("This phone", "Ahmad’s MacBook", "A device added on 3 November", "A device with no name"), devices.map { deviceTitle(it, utc) })
-        assertEquals(listOf(null, "Last synced 5 minutes ago", null, "Last synced 3 days ago"), devices.map { deviceDetail(it, now) })
+        assertEquals(listOf("Pixel 9", "Ahmad’s MacBook", "A device added on 3 November", "A device with no name"), devices.map { deviceTitle(it, utc) })
+        assertEquals(listOf("This phone", "Last synced 5 minutes ago", null, "Last synced 3 days ago"), devices.map { deviceDetail(it, now) })
+        // Before this phone has a name in the account, it is just "This phone".
+        val unnamed = SyncDevice("a", null, null, null, current = true)
+        assertEquals("This phone", deviceTitle(unnamed, utc))
+        assertNull(deviceDetail(unnamed, now))
         assertTrue(syncDevices(null).isEmpty())
         assertTrue(syncDevices(JSONObject("""{"devices":null}""")).isEmpty())
     }

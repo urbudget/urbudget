@@ -169,8 +169,10 @@ impl<'a> Transport<'a> {
             .header("X-Sync-Generation", string(bootstrap, "keyGeneration")?)
             .header("X-Sync-Epoch", string(bootstrap, "catalogEpoch")?))
     }
-    async fn catalog(&self, bootstrap: &Value) -> Result<Value> {
-        self.response(self.scoped(Method::GET, "/catalog/snapshot", bootstrap)?)
+    /// `held`: this device has the account's key, said to the server with each catalog request
+    /// ([`HELD`]).
+    async fn catalog(&self, bootstrap: &Value, held: bool) -> Result<Value> {
+        self.response(self.scoped(Method::GET, "/catalog/snapshot", bootstrap)?.header(HELD, held_value(held)))
             .await?
             .json()
             .await
@@ -401,6 +403,7 @@ pub(super) fn decorate_status(cloud: &Cloud, catalog: &budgets::Budgets, status:
     }
     status.protocol = 2;
     status.enabled = state["enabled"] == true;
+    status.reset_elsewhere = !status.unlocked && cloud.token().is_some() && state[RESET_ELSEWHERE] == true;
     let Ok(entries) = catalog.try_list_all() else {
         return;
     };
@@ -1402,6 +1405,7 @@ async fn reconcile_catalog(
     if let Some(after) = cursor.clone() {
         let query = transport
             .scoped(Method::GET, "/catalog/changes", bootstrap)?
+            .header(HELD, held_value(key.is_some()))
             .query(&[("after", after)]);
         match transport.response(query).await {
             Ok(response) => {
@@ -1438,6 +1442,7 @@ async fn reconcile_catalog(
                         .response(
                             transport
                                 .scoped(Method::GET, "/catalog/changes", bootstrap)?
+                                .header(HELD, held_value(key.is_some()))
                                 .query(&[("after", next), ("through", through.clone())]),
                         )
                         .await?
@@ -1451,7 +1456,7 @@ async fn reconcile_catalog(
         }
     }
     if cursor.is_none() {
-        let snapshot = transport.catalog(bootstrap).await?;
+        let snapshot = transport.catalog(bootstrap, key.is_some()).await?;
         if snapshot["catalogEpoch"] != bootstrap["catalogEpoch"]
             || snapshot["keyGeneration"] != bootstrap["keyGeneration"]
         {
@@ -1528,9 +1533,29 @@ async fn reconcile_catalog(
     }
     let mut library = library.lock();
     let mut state = library.account_state(account)?;
+    // The account's catalog was replaced since this device last synced, which only a reset does,
+    // and this device hasn't the new key: its screen says so until it is added again.
+    if key.is_some() {
+        if let Some(object) = state.as_object_mut() {
+            object.remove(RESET_ELSEWHERE);
+        }
+    } else if state["cursorEpoch"].is_string() && !same_epoch {
+        state[RESET_ELSEWHERE] = json!(true);
+    }
     state["cursor"] = json!(cursor);
     state["cursorEpoch"] = bootstrap["catalogEpoch"].clone();
     library.set_account_state(account, &state)
+}
+
+/// In an account's saved state: sync was reset on another device, and this one hasn't the new key.
+const RESET_ELSEWHERE: &str = "resetElsewhere";
+
+/// Sent with each catalog request: whether this device holds the account's key ("1") or asks
+/// while locked ("0"). The server lists a device among the account's devices on the first, and a
+/// device a reset cut off stays out of the list until then. Apps from before this say neither.
+const HELD: &str = "X-Sync-Unlocked";
+fn held_value(held: bool) -> &'static str {
+    if held { "1" } else { "0" }
 }
 
 /// In an account's saved state: the key generation a reset asked for on this device made.
@@ -2823,7 +2848,7 @@ async fn run_inner(
     // judged first by the identity the reset deleted.
     let after_reset = reenroll_after_reset(db, library, &account, &generation, &mut entry_errors)?;
     if !entry_errors.is_empty() { report.state = "attention"; }
-    adopt_legacy_bindings(&transport, db, library, &account, &bootstrap).await?;
+    adopt_legacy_bindings(&transport, db, library, &account, &bootstrap, key.is_some()).await?;
     reconcile_catalog(&transport, library, &account, &bootstrap, key.as_ref()).await?;
     // Deletion is catalog metadata: it must invalidate editors even while content is locked.
     let observed = library.lock().list_all();
@@ -2985,6 +3010,7 @@ async fn adopt_legacy_bindings(
     library: &Library,
     account: &str,
     bootstrap: &Value,
+    held: bool,
 ) -> Result<()> {
     let state = library.lock().account_state(account)?;
     if state["legacyAdopted"] == true {
@@ -3012,7 +3038,7 @@ async fn adopt_legacy_bindings(
         .filter(|e| tracked.contains_key(&e.id))
         .collect();
     if !candidates.is_empty() {
-        let snapshot = transport.catalog(bootstrap).await?;
+        let snapshot = transport.catalog(bootstrap, held).await?;
         let heads: Vec<Head> =
             serde_json::from_value(snapshot["budgets"].clone()).map_err(|e| e.to_string())?;
         for entry in candidates {

@@ -3059,6 +3059,7 @@ export const ar: Catalog = {
   "I've saved it": "حفظتُه",
   "On a phone that syncs, open Account & sync › Add a device and scan this code.": "على هاتف تعمل عليه المزامنة، افتح «الحساب والمزامنة» › «إضافة جهاز» وامسح هذا الرمز.",
   "QR code for unlocking sync on this computer": "رمز QR لفتح قفل المزامنة على هذا الكمبيوتر",
+  "Sync was reset on another device. Add this computer again to keep syncing.": "أُعيد ضبط المزامنة على جهاز آخر. أضِف هذا الكمبيوتر من جديد لتستمر المزامنة.",
   "Code from another device, or your recovery code": "رمز من جهاز آخر، أو رمز الاسترداد",
   "Code from another device, your recovery code, or your sync passphrase": "رمز من جهاز آخر، أو رمز الاسترداد، أو عبارة مرور المزامنة",
   "Show what I type": "إظهار ما أكتبه",

@@ -164,7 +164,7 @@ syncV2.post("/installations", async c => {
 syncV2.get("/installations", async c => {
   const rows = await statement(c.env.DB, `SELECT installation_id AS installationId,status,created_at AS createdAt,last_sequence AS lastSequence,device,last_seen_at AS lastSeenAt,
     EXISTS(SELECT 1 FROM sync_staging_v2 s WHERE s.user_id=i.user_id AND s.installation_id=i.installation_id) AS pending
-    FROM sync_installations_v2 i WHERE user_id=$user AND status='active' ORDER BY created_at,installation_id`, { user: user(c) }).all();
+    FROM sync_installations_v2 i WHERE user_id=$user AND status='active' AND cut_off=0 ORDER BY created_at,installation_id`, { user: user(c) }).all();
   return c.json({ installations: rows.results });
 });
 syncV2.delete("/installations/:id", async c => {
@@ -188,8 +188,20 @@ syncV2.get("/installations/:id/receipt", async c => {
     pending: next ? { sequence: next.sequence, digest: next.digest, expiresAt: next.expires_at } : null });
 });
 
+// A sync pass asks for the catalog, so that is where a device is seen: noted at most every two
+// minutes. A device says whether it holds the account's key (X-Sync-Unlocked): one that asks
+// while locked isn't syncing, and one a reset cut off is back in the list only once it has the
+// new key. Apps from before that header say neither, and are noted until a reset cuts them off.
+async function seen(c: Context<AppEnv>) {
+  const id = c.req.header("X-Sync-Installation"), held = c.req.header("X-Sync-Unlocked");
+  if (!validId(id) || held === "0") return;
+  await statement(c.env.DB, `UPDATE sync_installations_v2 SET last_seen_at=$at,cut_off=0 WHERE user_id=$user AND installation_id=$id AND status='active'
+    AND CASE WHEN cut_off=1 THEN $held=1 ELSE last_seen_at IS NULL OR last_seen_at<$before END`,
+    { user: user(c), id, at: now(), held: held === "1" ? 1 : 0, before: new Date(Date.now() - 120_000).toISOString() }).run();
+}
 syncV2.get("/catalog/snapshot", async c => {
   await scope(c);
+  await seen(c);
   const result = await statement(c.env.DB, `SELECT catalog_epoch AS epoch,key_generation AS generation,catalog_sequence AS highwater,min_cursor AS minimum,
     (SELECT COALESCE(json_group_array(json(head)),'[]') FROM (SELECT ${headJson()} AS head FROM sync_heads_v2 h WHERE h.user_id=a.user_id AND h.state='active' ORDER BY h.budget_id)) AS heads
     FROM sync_accounts_v2 a WHERE user_id=$user`, { user: user(c) }).first<{ epoch: string; generation: string; highwater: string; minimum: string; heads: string }>();
@@ -200,10 +212,7 @@ syncV2.get("/catalog/snapshot", async c => {
 });
 syncV2.get("/catalog/changes", async c => {
   const a = await scope(c);
-  // Every sync pass asks this, so it is where a device is seen. Noted at most every ten minutes.
-  const seen = c.req.header("X-Sync-Installation");
-  if (validId(seen)) await statement(c.env.DB, `UPDATE sync_installations_v2 SET last_seen_at=$at WHERE user_id=$user AND installation_id=$id AND status='active'
-    AND (last_seen_at IS NULL OR last_seen_at<$before)`, { user: user(c), id: seen, at: now(), before: new Date(Date.now() - 600_000).toISOString() }).run();
+  await seen(c);
   const after = counter(c.req.query("after") ?? "0", "after");
   const through = counter(c.req.query("through") ?? a.catalog_sequence, "through");
   if (BigInt(after) < BigInt(a.min_cursor)) throw new ApiError(410, "cursor_expired", "Fetch a new active snapshot and reconcile known IDs.");

@@ -717,6 +717,22 @@ test's waits, and on one with 462 budgets a run never finished
 without `-PrustDebug=true` before timing anything. The `sync-lifecycle` job in
 [android-native.yml](../.github/workflows/android-native.yml) runs this test in CI.
 
+To try sync by hand on a phone attached to the computer, against a server running there
+(`wrangler dev`), build a debug copy with its own id and a debug engine, so it installs beside
+the sideloaded app and never touches its budgets:
+
+```bash
+./gradlew :app:assembleDebug -PrustDebug=true -PdebugSuffix=.syncqa -PandroidAbis=arm64-v8a
+adb install -r app/build/outputs/apk/debug/app-debug.apk   # installs app.urbudget.syncqa
+adb reverse tcp:8795 tcp:8795
+adb shell setprop debug.urbudget.api http://127.0.0.1:8795
+```
+
+A debug engine reads `debug.urbudget.api` when the app starts and takes only an address on the
+phone itself, which `adb reverse` carries to the computer. The property lasts until the phone
+restarts. `adb shell am start -a android.intent.action.VIEW -d "urbudget://pair/1/<code>"` opens
+a sync code as the phone's camera would.
+
 ## Verification and remaining external acceptance
 
 Local verification on 2026-10-21 passed:

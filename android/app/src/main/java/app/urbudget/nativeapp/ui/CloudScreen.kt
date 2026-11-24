@@ -159,7 +159,10 @@ internal fun CloudScreen(vm: BudgetViewModel, openLibrary: () -> Unit) {
             catch (_: Exception) { /* Offline: the row asks again when it's tapped. */ }
             finally { askingKey = false }
     }
-    LaunchedEffect(signedIn, unlocked, devicesRevision, lifecycle) {
+    // Asked again after each sync pass while the screen is open: a device added or cut off from
+    // another one, and when each last synced.
+    val lastPass = sync?.optJSONObject("last")?.optString("at").orEmpty()
+    LaunchedEffect(signedIn, unlocked, devicesRevision, lastPass, lifecycle) {
         if (signedIn.isBlank() || !unlocked) devices = emptyList()
         else lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             try { devices = syncDevices(NativeServices.read("sync_devices")) }
@@ -298,6 +301,8 @@ internal fun CloudScreen(vm: BudgetViewModel, openLibrary: () -> Unit) {
                 SyncKey.Locked -> item {
                     CloudCard {
                         Text(stringResource(R.string.cloud_locked_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = ur.text)
+                        // Another device reset sync: why this one asks to unlock when it used to sync.
+                        if (sync?.optBoolean("resetElsewhere") == true) Text(stringResource(R.string.cloud_locked_reset), color = ur.text, style = MaterialTheme.typography.bodyMedium)
                         Text(stringResource(R.string.cloud_locked_detail), color = ur.text2, style = MaterialTheme.typography.bodyMedium)
                         // Stretching a typed code into a key takes a moment, and this card may be all that's in view.
                         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = ur.accent)

@@ -46,6 +46,11 @@ enum SyncKey {
         status["sync"].flag("recoveryUnsaved")
     }
 
+    /// Sync was reset on another device since this one last synced, and it hasn't been added again.
+    static func resetElsewhere(_ status: JSON) -> Bool {
+        status["sync"].flag("resetElsewhere")
+    }
+
     /// The protocol the account syncs on: `sync_key_info`'s fresh answer where there is one,
     /// else what the last sync saved.
     static func protocolNumber(_ status: JSON, info: JSON? = nil) -> Int64 {

@@ -140,6 +140,9 @@ pub struct Status {
     /// This device holds a recovery code the person hasn't confirmed saving
     /// (`sync_recovery_unsaved` shows it, `sync_recovery_saved` lets go of it).
     pub recovery_unsaved: bool,
+    /// Sync was reset on another device since this one last synced, and this one hasn't been
+    /// added again: the screen says why it asks to unlock.
+    pub reset_elsewhere: bool,
     pub last: Option<Report>,
 }
 
@@ -430,6 +433,7 @@ impl Engine {
             secret: None,
             recovery: false,
             recovery_unsaved: false,
+            reset_elsewhere: false,
             last: self.last.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         }
     }

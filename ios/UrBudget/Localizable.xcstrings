@@ -271,6 +271,16 @@
         }
       }
     },
+    "Sync was reset on another device. Add this one again to keep syncing." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُعيد ضبط المزامنة على جهاز آخر. أضِف هذا الجهاز من جديد لتستمر المزامنة."
+          }
+        }
+      }
+    },
     "This account now uses the new sync." : {
       "localizations" : {
         "ar" : {

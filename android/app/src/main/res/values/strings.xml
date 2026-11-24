@@ -1306,6 +1306,8 @@
     <string name="library_open_now">Open now</string>
     <string name="library_file_missing">File missing</string>
     <string name="library_on_device">On this device</string>
+    <!-- Under a budget this phone kept as a copy when the account's budgets were replaced. It doesn't sync and can't be opened as it is. -->
+    <string name="library_kept_copy">Kept copy. Press and hold to recover it.</string>
     <string name="library_open_chip">Open</string>
     <string name="common_open">Open</string>
     <string name="library_delete_local">Delete local budget</string>
@@ -1428,6 +1430,7 @@
     <string name="cloud_new_recovery_code">New recovery code</string>
     <string name="cloud_reset_sync">Reset sync</string>
     <string name="cloud_locked_title">Unlock sync on this device</string>
+    <string name="cloud_locked_reset">Sync was reset on another device. Add this one again to keep syncing.</string>
     <string name="cloud_locked_detail">On a device that already syncs, open Account &amp; sync and choose Add a device. Then scan the code it shows.</string>
     <string name="cloud_scan_code">Scan a code</string>
     <string name="cloud_unlock_field_code">Code from another device, or your recovery code</string>

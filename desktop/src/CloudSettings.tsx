@@ -321,6 +321,7 @@ function Locked({ cloud: state, secret, onDone, reset }: { cloud: Cloud; secret:
   const passphrase = secret === "passphrase";
   return (
     <div className="unlock">
+      {state.status?.sync.resetElsewhere && <p className="help">{t("Sync was reset on another device. Add this computer again to keep syncing.")}</p>}
       {ended ? (
         <p className="help unlock-code">
           {ended}{" "}
@@ -708,6 +709,15 @@ export function SyncSettings({
     loadDevices();
     return () => { devicesRequest.current++; };
   }, [loadDevices]);
+  // While the page is open the list follows each sync pass: a device added or cut off from
+  // another one, and when each last synced.
+  const passAt = report?.at;
+  const firstPass = useRef(passAt);
+  useEffect(() => {
+    if (passAt === firstPass.current) return;
+    firstPass.current = passAt;
+    loadDevices();
+  }, [passAt, loadDevices]);
 
   if (!status)
     return (

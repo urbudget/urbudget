@@ -46,7 +46,9 @@ android {
         keyAlias = uploadValues[1]; storePassword = uploadValues[2]; keyPassword = uploadValues[3]
     }
     buildTypes {
-        debug { applicationIdSuffix = ".nativeapp" }
+        // -PdebugSuffix=.syncqa makes a test copy that installs beside the sideloaded app, whose
+        // budgets it then can't touch.
+        debug { applicationIdSuffix = providers.gradleProperty("debugSuffix").orElse(".nativeapp").get() }
         release {
             if (uploadValues.all { it != null }) signingConfig = signingConfigs.getByName("upload")
             isMinifyEnabled = true

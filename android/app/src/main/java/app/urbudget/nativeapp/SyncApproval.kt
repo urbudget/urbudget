@@ -197,18 +197,20 @@ internal fun syncDevices(answer: Any?): List<SyncDevice> {
 }
 
 /**
- * What a device is called in the list: the one in hand is "This phone", another goes by its name,
- * and one that registered before names were kept by the day it was added ("A device added on 3 November").
+ * What a device is called in the list: its name, or "This phone" for the one in hand before it has
+ * one, and one that registered before names were kept by the day it was added ("A device added on
+ * 3 November").
  */
 internal fun deviceTitle(device: SyncDevice, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String = when {
-    device.current -> Words[R.string.sync_device_this]
     device.name != null -> device.name
+    device.current -> Words[R.string.sync_device_this]
     device.added != null -> Words[R.string.sync_device_added_on, Money.ltr(device.added.atZone(zone).toLocalDate().format(Money.pattern("d MMMM")))]
     else -> Words[R.string.sync_device_unnamed]
 }
 
-/** The line under a device's name: when another device last synced. The one in hand needs none. */
-internal fun deviceDetail(device: SyncDevice, now: Instant): String? = if (device.current) null else lastSynced(device.lastSeen, now)
+/** The line under a device's name: "This phone" for the one in hand, when another last synced. */
+internal fun deviceDetail(device: SyncDevice, now: Instant): String? =
+    if (device.current) Words[R.string.sync_device_this].takeIf { device.name != null } else lastSynced(device.lastSeen, now)
 
 /** What the plan part of the screen has to say. A plan in good standing says nothing there. */
 internal enum class PlanNotice {

@@ -74,8 +74,8 @@ drop tombstones/receipts, reopen legacy writes, or rewind D1 independently of R2
 | `GET /pairings/:id/state` | `{waiting}`. Reads only: the device showing the code learns it was collected. |
 | `DELETE /pairings/:id` | Takes an uncollected message back. Idempotent. |
 | `PUT /recovery` | `{keyGeneration, salt, wrapped}`: a replacement recovery code's copy of the key, replacing any earlier copy. Protocol 2 only; 409 `sync_key_changed` for another generation. The key, its generation and every head stay as they are. |
-| `POST /installations` | `{installationId}` with a client-generated random ID. Returns `lastSequence` and last terminal `receipt`. Re-registering never resets a sequence. |
-| `GET /installations` | Active installation IDs, creation times, last sequences, and whether each has a pending mutation. |
+| `POST /installations` | `{installationId, device?}` with a client-generated random ID and what the device calls itself (64 characters kept). Returns `lastSequence` and last terminal `receipt`. Re-registering never resets a sequence, and renames the device. |
+| `GET /installations` | The account's devices: active installation IDs, names, creation times, when each was last seen, last sequences, and whether each has a pending mutation. Leaves out the devices a key reset cut off until they sync again with the new key. |
 | `DELETE /installations/:id` | Retire an installation with no pending mutation; idempotent once retired. Retains its sequence and receipt, prevents registration or new mutations under that ID, and frees active-device capacity. |
 | `GET /installations/:id/receipt` | Last terminal receipt plus pending sequence/digest/expiry. |
 | `GET /catalog/snapshot` | Active heads and a highwater read in one SQL snapshot. |
@@ -97,7 +97,10 @@ terminal receipt before contacting the provider.
 
 Scoped catalog/status/trash/content reads require `X-Sync-Generation` and
 `X-Sync-Epoch` (equivalent query parameters are accepted). Mutation requests
-require `X-Sync-Installation`. Old receipt replay precedes entitlement, head,
+require `X-Sync-Installation`. A catalog snapshot or changes request that names
+its installation notes it as seen, at most every two minutes; `X-Sync-Unlocked`
+says whether the device holds the account's key (`1`) or asks while locked
+(`0`, not noted). A device a reset cut off is listed again only on `1`. Old receipt replay precedes entitlement, head,
 generation, and publication-pause checks.
 
 There is one pending mutation and one retained last terminal receipt per

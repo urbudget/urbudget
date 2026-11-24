@@ -335,3 +335,48 @@ The server keeps each device's name and when it was last seen (migration 0019,
 `POST /installations {device}`, `GET /installations`), and a device that registered before
 that sends its name once more.
 
+## 15. Found with a real iPhone and a real Android phone against the desktop (25 Nov 2026)
+
+Each phone did both scans against the desktop app: the phone's own Camera app opening UrBudget
+from a computer's code and approving it, and the phone scanning the code a computer shows under
+Add a device, after a reset from the desktop had cut it off. All four worked. What they showed
+that needed changing:
+
+- **A sync link did nothing on an Android phone with no budget open.** That is a new phone's
+  state: the app opened and stayed where it was. Account & sync now opens for a link with no
+  budget open too.
+- **"Last synced" ran up to ten minutes behind.** A device that had synced seconds earlier read
+  "Last synced 9 minutes ago" on the others. The server now notes a device as seen at most every
+  two minutes.
+- **Devices cut off by a reset stayed in the list**, as if they still synced. A reset marks the
+  other devices cut off (`cut_off`, migration 0019) and `GET /installations` leaves them out. A
+  locked device still asks the server for the catalog, so asking proves nothing: with each
+  catalog request a device says whether it holds the account's key (`X-Sync-Unlocked: 1` or
+  `0`), and a cut-off device is listed again on its first request that says it does. One that
+  asks while locked isn't noted as seen either. An app from before this says neither: it is
+  noted as before, and after a reset stays out of the list until it is updated.
+- **A device cut off by a reset didn't say why it asked to unlock.** The engine notes it when the
+  account's catalog was replaced since the device last synced and it hasn't the new key (status
+  `resetElsewhere`), and the screen says "Sync was reset on another device. Add this one again
+  to keep syncing." above the scan button. Locking a device by hand doesn't say that.
+- **The list was read once**, so a screen left open went on showing devices a reset had cut
+  off. The three apps read it again after each sync pass while the screen is open.
+- On iPhone, "Device added." stayed on screen after sync locked; it now goes when sync locks or
+  unlocks. On Android the phone's own row reads its name with "This phone" beneath, as the
+  other two apps do, and the budget library says which rows are kept copies ("Kept copy. Press
+  and hold to recover it."): they read "On this device", like the budget beside them, and did
+  nothing when tapped.
+- An iPhone is listed as "iPhone": iOS gives apps the model, not the name its owner chose.
+
+Still as it was, and the roughest part left: after a reset, every other device keeps its copies
+of the budgets as kept copies beside the ones it downloads again, to delete by hand, and the
+budget it had open closes when it is added back. Two resets left the iPhone saying "4 budgets
+need you" and the Android library showing three of each budget. A copy is safe to drop when it
+holds nothing the resetting device's upload lacks. The file already keeps what would tell
+(`Binding.remote_version` and the last synced `base`); what's missing is the new budget saying
+which old one it continues, and at which version.
+
+For testing on a phone attached to the Mac: an Android copy built with `-PrustDebug=true
+-PdebugSuffix=.syncqa` installs beside the sideloaded app and talks to the server named by
+`adb shell setprop debug.urbudget.api http://127.0.0.1:<port>` over `adb reverse`.
+

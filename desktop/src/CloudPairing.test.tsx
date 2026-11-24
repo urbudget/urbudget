@@ -111,6 +111,18 @@ it("shows its own code for a phone to scan, and unlocks once the phone approves"
   expect(commands("sync_pair_cancel")).toEqual([]);
 });
 
+it("says why it asks to unlock when sync was reset on another device", async () => {
+  const told = "Sync was reset on another device. Add this computer again to keep syncing.";
+  const page = render(view(state()));
+  await screen.findByRole("img", { name: UNLOCK_QR });
+  expect(screen.queryByText(told)).toBeNull();
+  page.unmount();
+  status.sync.resetElsewhere = true;
+  render(view(state()));
+  await screen.findByRole("img", { name: UNLOCK_QR });
+  expect(screen.getByText(told)).toBeTruthy();
+});
+
 it("stops asking and drops its code when the screen is left", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   const page = render(view(state()));
