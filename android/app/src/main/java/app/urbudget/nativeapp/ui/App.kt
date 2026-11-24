@@ -955,8 +955,8 @@ private fun WelcomeScreen(busy: Boolean, create: (NewBudget) -> Unit, importFile
     var template by rememberSaveable { mutableStateOf(DEFAULT_TEMPLATE) }
     Column(Modifier.fillMaxSize().background(ur.bg).verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp, vertical = 28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Spacer(Modifier.height(24.dp))
-        // The app icon's two layers: the mark on the brand purple, as on the home screen.
+        // The app icon's two layers: the mark on the brand purple, as on the home screen. The
+        // budget library's link above leaves room enough at the top.
         Box(Modifier.size(64.dp).clip(RoundedCornerShape(18.dp)).background(androidx.compose.ui.graphics.Color(0xFF6D4AE8)), contentAlignment = Alignment.Center) {
             androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, modifier = Modifier.fillMaxSize())
         }

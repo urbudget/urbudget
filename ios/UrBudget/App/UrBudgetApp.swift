@@ -83,10 +83,7 @@ struct RootView: View {
             if store.loading {
                 ProgressView().controlSize(.large)
             } else if store.budget == nil {
-                VStack {
-                    Button("Budget library") { showingLibrary = true }.padding()
-                    WelcomeView()
-                }
+                WelcomeView(openLibrary: { showingLibrary = true })
             } else {
                 // Every form, picker and report belongs to one library entry.
                 MainTabs().id(store.identity ?? "")
