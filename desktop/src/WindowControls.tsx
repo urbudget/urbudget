@@ -1,13 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { os } from "./platform";
+import { os, type Os } from "./platform";
 import { t } from "./i18n";
 
 /**
- * On Windows the app draws its own title bar in place of the system one (turned off in
- * tauri.windows.conf.json). Elsewhere the system title bar stays.
+ * On Windows and macOS the app draws its own title bar. Windows' system bar is turned off
+ * (tauri.windows.conf.json); macOS's is see-through and keeps only its traffic lights, which sit
+ * over the left end of the app's bar (tauri.macos.conf.json). Linux keeps the system title bar.
  */
-export const customTitleBar = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window && os === "windows";
+export const customTitleBar =
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window && (os === "windows" || os === "macos");
 
 const NAME = "UrBudget";
 
@@ -39,24 +41,42 @@ export function AppMark({ className = "titlebar-mark" }: { className?: string })
  * A strip in the sidebar's color across the top of the window: the window's name on the left,
  * the app's own buttons (`children`) beside the window buttons on the right. Anywhere that isn't
  * a button moves the window; a double-click maximizes. Like the system bar, it dims while
- * another window has focus.
+ * another window has focus. On macOS the system's traffic lights take the place of the window
+ * buttons, at the bar's left end; full screen hides them, and the bar gives their room back.
  */
-export function TitleBar({ children }: { children?: ReactNode }) {
+export function TitleBar({ children, system = os }: { children?: ReactNode; system?: Os }) {
+  const mac = system === "macos";
   const [title, setTitle] = useState(NAME);
   const [focused, setFocused] = useState(true);
+  const [fullscreen, setFullscreen] = useState(false);
   useEffect(() => {
     const w = getCurrentWindow();
-    let stop: (() => void) | undefined;
+    const stops: (() => void)[] = [];
+    let gone = false;
+    const keep = (unlisten: () => void) => (gone ? unlisten() : stops.push(unlisten));
     w.title()
       .then((t) => t && setTitle(t))
       .catch(() => {});
     w.onFocusChanged(({ payload }) => setFocused(payload))
-      .then((unlisten) => (stop = unlisten))
+      .then(keep)
       .catch(() => {});
-    return () => stop?.();
-  }, []);
+    if (mac) {
+      const update = () => void w.isFullscreen().then(setFullscreen).catch(() => {});
+      update();
+      w.onResized(update)
+        .then(keep)
+        .catch(() => {});
+    }
+    return () => {
+      gone = true;
+      stops.forEach((stop) => stop());
+    };
+  }, [mac]);
   return (
-    <div className={`titlebar${focused ? "" : " inactive"}`} data-tauri-drag-region="deep">
+    <div
+      className={`titlebar${mac ? " mac" : ""}${mac && fullscreen ? " fullscreen" : ""}${focused ? "" : " inactive"}`}
+      data-tauri-drag-region="deep"
+    >
       {title.startsWith(NAME) ? (
         // The mark and the wordmark, its "Ur" in the mark's purple; anything the window adds after
         // the name (a preview build's label) follows them.
@@ -75,7 +95,7 @@ export function TitleBar({ children }: { children?: ReactNode }) {
         </div>
       )}
       {children && <div className="titlebar-actions">{children}</div>}
-      <WindowControls />
+      {!mac && <WindowControls />}
     </div>
   );
 }

@@ -12,9 +12,10 @@
 .setup-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  /* A step that scrolls sits where one that doesn't does. */
-  scrollbar-gutter: stable both-edges;
+  /* A step that scrolls sits where one that doesn't does: the bar is always there (see
+     .page-scroll) and the same room on the other side keeps the step centred. */
+  overflow-y: scroll;
+  padding-inline-start: var(--scrollbar-size);
 }
 /* The question and its lead read as one block, set well apart from the fields under them. */
 .setup {

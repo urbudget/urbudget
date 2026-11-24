@@ -129,14 +129,8 @@
   padding-block: var(--pinned, 0px) var(--gutter);
   padding-inline: var(--gutter) calc(var(--gutter) - var(--scrollbar-size));
   overflow: auto;
-  scrollbar-gutter: stable;
-}
-/* WebKit before Safari 18.2 (macOS 15.1's) has no scrollbar-gutter: there the bar's track stays
-   instead, empty until there's something to scroll, so the margins still match. */
-@supports not (scrollbar-gutter: stable) {
-  .register-scroll {
-    overflow-y: scroll;
-  }
+  /* Always there, so the margins hold on a Mac too (see .page-scroll). */
+  overflow-y: scroll;
 }
 /* A spreadsheet-like grid, like the budget table: square corners, a line between every column
    and row, and padding inside each cell. */

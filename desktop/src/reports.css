@@ -70,14 +70,8 @@
   padding-block: 20px;
   padding-inline: var(--gutter) calc(var(--gutter) - var(--scrollbar-size));
   overflow: auto;
-  scrollbar-gutter: stable;
-}
-/* WebKit before Safari 18.2 (macOS 15.1's) has no scrollbar-gutter: there the bar's track stays
-   instead, empty until there's something to scroll, so the margins still match. */
-@supports not (scrollbar-gutter: stable) {
-  .report-main {
-    overflow-y: scroll;
-  }
+  /* Always there, so the margins hold on a Mac too (see .page-scroll). */
+  overflow-y: scroll;
 }
 /* The assistant's printed reports style a .report-head of their own (report-doc.css, loaded with
    the assistant), with a rule and a gap under it; this page's heading has neither. */
