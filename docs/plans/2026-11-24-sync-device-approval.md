@@ -244,3 +244,30 @@ a computer's code scanned from a phone, and Add a device closing itself.
 - Android adds the CAMERA permission, and iPhone a camera usage string. Both need the stores'
   declarations updated, and the Play listing still says "encrypted with your own passphrase"
   (`docs/play-listing/README.md`), as do the review notes that tell a reviewer to set one.
+
+## 13. Found on real devices
+
+The first run between a real iPhone and the desktop app (24 November) found three things the
+automated suites had not, all fixed on this branch.
+
+- **Budgets sync unless someone says otherwise.** The phone's camera read the desktop's code
+  and the phone unlocked, but the budget never arrived: it was made before sync was turned on,
+  and such a budget stayed "only on this device" until added by hand in the budget library.
+  Now every budget with no account joins the signed-in account once sync is on and unlocked,
+  on every device and on every pass (`v2::enroll_local`), and turning sync on adds the
+  device's budgets at once. The exceptions are a budget created with "Keep this budget only on
+  this device" (now remembered, in the library's `device_only` table, and taken back by adding
+  the budget to sync), the app's samples, a budget that belongs to another account, and an
+  unlinked copy of a budget the account already has. Nothing is matched by name: a budget a
+  second device made on its own becomes a second budget in the account. An earlier version did
+  not record the "keep on this device" choice, so a budget it was made for syncs after this.
+  A "This device only" row in Account & sync has its Sync button on protocol 2 as well.
+- **The iPhone app ran out of stack in a sync pass.** Swift calls the engine from its
+  concurrency threads, which have 512 KB. An unoptimized engine overflows that as soon as a
+  pass has a budget to work on (a bus error at the stack guard, in `process_budget`). Every
+  service call from the iPhone app now runs on its own thread with 8 MB
+  (`urbudget-ios`, `on_service_stack`), in every build.
+- **A debug build forgot its test server.** Reopened from the Home Screen, it talked to
+  urbudget.app. A debug build now remembers the server it was last launched against
+  (`DebugServer`, debug builds only).
+

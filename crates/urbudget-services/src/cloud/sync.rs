@@ -873,7 +873,12 @@ pub async fn sync_unlock(cloud: &Cloud, library: &Library, secret: String) -> Re
 /// start syncing).
 pub async fn sync_setup(cloud: &Cloud, library: &Library, passphrase: Option<String>) -> Result<Value, String> {
     let passphrase = passphrase.filter(|typed| !typed.is_empty());
-    if let Some(result)=super::v2::try_setup(cloud,library,passphrase.as_deref(),false).await? {return Ok(result);}
+    if let Some(result)=super::v2::try_setup(cloud,library,passphrase.as_deref(),false).await? {
+        // Sync was just turned on for this account, here: the budgets already on this device
+        // start syncing, as protocol 1 does below.
+        if result["created"] == true { super::v2::enroll_existing(cloud, library)?; }
+        return Ok(result);
+    }
     // Protocol 1 makes the key the same way, so a code made here is its passphrase.
     let (passphrase, made) = match passphrase {
         Some(passphrase) => (passphrase, None),

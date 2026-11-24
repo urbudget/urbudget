@@ -11,6 +11,12 @@ struct UrBudgetApp: App {
     /// Unit tests open their own temporary library; the app's must stay closed.
     private let testing = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
+    init() {
+        #if DEBUG
+        DebugServer.restore()
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

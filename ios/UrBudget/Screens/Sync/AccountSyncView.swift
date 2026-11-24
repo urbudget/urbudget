@@ -150,8 +150,11 @@ struct AccountSyncView: View {
                 Text("The code or passphrase you already have keeps working. To retire it, reset sync.")
             }
         }
-        .confirmationDialog("Reset sync?", isPresented: $confirmingReset, titleVisibility: .visible) {
+        // An alert, not a confirmation dialog: this explanation is several sentences, and a dialog
+        // hangs them as a narrow popover off whichever row is nearest.
+        .alert("Reset sync?", isPresented: $confirmingReset) {
             Button("Reset sync", role: .destructive) { reset() }
+            Button("Cancel", role: .cancel) {}
         } message: {
             Text(resetMessage)
         }
@@ -387,6 +390,11 @@ struct AccountSyncView: View {
                                 .background((state == "conflict" ? Color.urWarning : Color.secondary).opacity(0.14), in: Capsule())
                         }
                         if !entry.text("message").isEmpty { Text(entry.text("message")).font(.subheadline).foregroundStyle(Color.secondary) }
+                        // A copy kept after a reset has no button here: the library brings it back.
+                        else if state == "recovery" {
+                            Text("Kept on this device as a copy. Recover it as a new budget in the budget library.")
+                                .font(.subheadline).foregroundStyle(Color.secondary)
+                        }
                         ForEach(entry["notes"].array.map(\.string), id: \.self) { Text($0).font(.footnote).foregroundStyle(Color.secondary) }
                         HStack(spacing: 10) {
                             switch state {
@@ -398,10 +406,15 @@ struct AccountSyncView: View {
                                     }
                                 }
                                 .buttonStyle(.bordered)
-                            case "local_only" where sync.status?["sync"]["protocol"].int != 2:
+                            // A budget kept only on this device, on either sync: one tap adds it to the account.
+                            case "local_only":
                                 Button("Start syncing") {
                                     run {
-                                        _ = try await store.service("sync_track", ["ids": JSON([entry.text("id")])])
+                                        if sync.status?["sync"]["protocol"].int == 2 {
+                                            _ = try await store.service("sync_enable", ["enabled": true, "ids": JSON([entry.text("id")])])
+                                        } else {
+                                            _ = try await store.service("sync_track", ["ids": JSON([entry.text("id")])])
+                                        }
                                         try await sync.syncNow()
                                     }
                                 }
@@ -435,9 +448,17 @@ struct AccountSyncView: View {
         case "downloaded": return String(localized: "Downloaded")
         case "merged": return String(localized: "Merged")
         case "waiting": return String(localized: "Waiting")
+        case "recovery": return String(localized: "Kept copy")
+        case "locked": return String(localized: "Locked")
         case "deletion_conflict": return String(localized: "Newer changes need review before deletion")
         case "update_app": return String(localized: "Update the app")
         case "error": return String(localized: "Error")
+        case "queued": return String(localized: "Waiting to sync")
+        case "trashed": return String(localized: "In Trash")
+        case "purged": return String(localized: "Removed")
+        case "signed_out": return String(localized: "Signed out")
+        case "evicted": return String(localized: "Not downloaded")
+        case "subscription_required": return String(localized: "Needs a sync plan")
         case "": return String(localized: "Unknown")
         default: return state.replacingOccurrences(of: "_", with: " ").capitalized
         }
@@ -513,6 +534,8 @@ struct AccountSyncView: View {
                 return
             }
             typedSecret = ""
+            // The next passphrase typed here is hidden again.
+            showingTyped = false
             try await sync.syncNow()
         }
     }

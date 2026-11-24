@@ -51,12 +51,72 @@
         }
       }
     },
+    "Kept copy" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نسخة محفوظة"
+          }
+        }
+      }
+    },
+    "Kept copy. Hold to recover it as a new budget." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نسخة محفوظة. اضغط مطولًا لاستعادتها كميزانية جديدة."
+          }
+        }
+      }
+    },
+    "Kept on this device as a copy. Recover it as a new budget in the budget library." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "محفوظة على هذا الجهاز كنسخة. استعدها كميزانية جديدة من مكتبة الميزانيات."
+          }
+        }
+      }
+    },
+    "Locked" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مقفلة"
+          }
+        }
+      }
+    },
     "Month total: %@ → %@" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "إجمالي الشهر: ⁨%1$@⁩ ← ⁨%2$@⁩"
+          }
+        }
+      }
+    },
+    "Needs a sync plan" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحتاج إلى اشتراك مزامنة"
+          }
+        }
+      }
+    },
+    "Not downloaded" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير منزَّلة"
           }
         }
       }
@@ -197,6 +257,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "بعد الانتقال، يحتاج كل جهاز يزامن هذا الحساب إلى الإصدار 1.0.11 أو أحدث على سطح المكتب، أو 1.0.1 أو أحدث على Android، أو 1.0.1 أو أحدث على iPhone. يُطلب من الإصدارات الأقدم تحديث UrBudget قبل أن تزامن مرة أخرى، وتبقى الميزانيات المحفوظة عليها."
+          }
+        }
+      }
+    },
+    "Signed out" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "خرجت من الحساب"
           }
         }
       }

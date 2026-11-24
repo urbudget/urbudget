@@ -106,6 +106,8 @@ export const cloud = {
   /** Moves the account to the new sync; the passphrase only when `upgradeNeedsPassphrase`. */
   syncUpgrade: (passphrase?: string) => invoke<{ created: boolean; protocol: 2 }>("sync_upgrade", { passphrase: passphrase || null }),
   syncTrack: (ids: string[]) => invoke<void>("sync_track", { ids }),
+  /** On the new sync: adds budgets kept only on this computer to the account, so they start syncing. */
+  syncAdd: (ids: string[]) => invoke<unknown>("sync_enable", { enabled: true, ids }),
   syncDownload: (id: string) => invoke<string>("sync_download", { id }),
   /** "merge" merges again with the answers in `choices`; "local" and "cloud" keep one whole version. */
   syncResolve: (id: string, keep: "merge" | "local" | "cloud", openClean: boolean, choices?: Record<string, "local" | "cloud">, review?: BudgetSync["review"]) =>

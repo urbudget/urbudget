@@ -1512,15 +1512,73 @@ pub fn enroll_created(cloud: &Cloud, library: &Library, id: &str) -> Result<()> 
     }
     Ok(())
 }
-/// Explicit device-only and sample budgets never acquire a cloud identity implicitly.
+/// Whether a budget is one of the app's samples, which stay on their device.
+fn is_sample(budget: &Budget) -> bool {
+    budget.extra.get("sample").is_some_and(|sample| sample.is_object() || sample == true)
+}
+
+/// Budgets sync unless someone says otherwise: every budget kept on this device with no
+/// account joins the signed-in account, as a new budget there, once sync is on and unlocked.
+/// Left alone are:
+/// - a budget the person chose to keep on this device (`Budgets::device_only`);
+/// - the app's samples;
+/// - one that belongs to another account, which never moves by itself;
+/// - a copy of a budget the account already has under the same id (`known`), whose row says to
+///   compare the two (`unlinked_legacy_copy`);
+/// - one that can't be read.
+/// Nothing is matched by name or content: a budget this device made apart from the account's
+/// becomes a second budget there, for the person to keep or remove. Returns how many joined.
+fn enroll_local(library: &Library, account: &str, known: &std::collections::BTreeSet<String>) -> Result<usize> {
+    let mut library = library.lock();
+    let state = library.account_state(account)?;
+    if state["enabled"] != true || state["protocol"] != 2 {
+        return Ok(0);
+    }
+    let mut joined = 0;
+    for entry in library.list_all() {
+        if entry.account_id.is_some() || entry.lifecycle != "active" || entry.availability != "local" || entry.missing {
+            continue;
+        }
+        if known.contains(&entry.id) || library.device_only(&entry.id)? {
+            continue;
+        }
+        let ordinary = crate::store::Store::open_budget(std::path::Path::new(&entry.path), &entry.id)
+            .and_then(|mut store| store.saved())
+            .is_ok_and(|(budget, _)| !is_sample(&budget));
+        if !ordinary {
+            continue;
+        }
+        library.associate(&entry.id, account, &budgets::new_id(), &budgets::new_id())?;
+        library.set_entry_status(&entry.id, "queued")?;
+        joined += 1;
+    }
+    Ok(joined)
+}
+
+/// `enroll_local` at the moment sync is turned on for an account, on the device that made its
+/// key, so its budgets are on their way before the first pass. The account was empty a moment
+/// ago, so it has no budget of its own yet.
+pub(super) fn enroll_existing(cloud: &Cloud, library: &Library) -> Result<usize> {
+    match cloud.selected_account() {
+        Some(account) => enroll_local(library, &account, &Default::default()),
+        None => Ok(0),
+    }
+}
+
+/// A new budget joins the signed-in account unless it is a sample or the person chose to keep
+/// it on this device (`local_only`), which is remembered so sync never adds it later either.
 pub fn create_with_scope(
     cloud: &Cloud,
     library: &mut budgets::Budgets,
     budget: &Budget,
     local_only: bool,
 ) -> Result<String> {
-    if local_only || budget.extra.get("sample").is_some_and(|sample| sample.is_object() || sample == true) {
+    if is_sample(budget) {
         library.create()
+    } else if local_only {
+        let id = library.create()?;
+        library.set_device_only(&id, true)?;
+        Ok(id)
     } else {
         create_owned(cloud, library)
     }
@@ -1572,6 +1630,8 @@ pub fn enable(
             }
             library.associate(id, &account, &budgets::new_id(), &budgets::new_id())?;
             library.set_entry_status(id, "queued")?;
+            // Adding it is the person changing their mind about keeping it here only.
+            library.set_device_only(id, false)?;
         }
     }
     drop(library);
@@ -2476,9 +2536,14 @@ async fn run_inner(
             }
         }
     }
+    let account_budgets = account_budget_ids(library, &account, &bootstrap)?;
+    // Budgets sync unless someone says otherwise. Without a plan nothing could upload, so
+    // nothing is given an identity it can't use.
+    if enabled && bootstrap["entitlement"]["active"] == true {
+        enroll_local(library, &account, &account_budgets)?;
+    }
     let entries = library.lock().list_all();
     let lifecycle_errors = library.lock().account_state(&account)?["lifecycleErrors"].clone();
-    let account_budgets = account_budget_ids(library, &account, &bootstrap)?;
     for entry in entries {
         let mut outcome = if let Some(error) = entry_errors.remove(&entry.id) {
             report_entry(&entry,"error",Some(error))

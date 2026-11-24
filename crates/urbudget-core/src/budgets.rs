@@ -1735,6 +1735,7 @@ impl Budgets {
    CREATE TABLE IF NOT EXISTS delivery_slot(account_id TEXT PRIMARY KEY,data TEXT NOT NULL CHECK(json_valid(data)));
    CREATE TABLE IF NOT EXISTS delivery_completed(account_id TEXT NOT NULL,sequence TEXT NOT NULL,digest TEXT NOT NULL,PRIMARY KEY(account_id,sequence));
    CREATE TABLE IF NOT EXISTS sync_hints(local_budget_id TEXT PRIMARY KEY,data TEXT NOT NULL CHECK(json_valid(data)));
+   CREATE TABLE IF NOT EXISTS device_only(local_budget_id TEXT PRIMARY KEY);
   ").map_err(error)?;
         let tx = c
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -2162,7 +2163,7 @@ impl Budgets {
         if path == root || !path.starts_with(&root) {
             return Err("Migrate legacy storage before deleting this budget.".into());
         }
-        for table in ["lifecycle_jobs", "sync_hints"] {
+        for table in ["lifecycle_jobs", "sync_hints", "device_only"] {
             tx.execute(
                 &format!("DELETE FROM {table} WHERE local_budget_id=?1"),
                 [id],
@@ -2338,6 +2339,23 @@ impl Budgets {
             self.current.clear();
         }
         Ok(())
+    }
+    /// Whether the person chose to keep this budget on this device only. Budgets sync unless
+    /// someone says otherwise, and this is where they said so: sync never adds such a budget
+    /// to an account by itself.
+    pub fn device_only(&self, id: &str) -> Result<bool> {
+        self.connection
+            .query_row("SELECT EXISTS(SELECT 1 FROM device_only WHERE local_budget_id=?1)", [id], |r| r.get(0))
+            .map_err(error)
+    }
+    /// Records, or takes back, the choice to keep a budget on this device only.
+    pub fn set_device_only(&mut self, id: &str, kept: bool) -> Result<()> {
+        let sql = if kept {
+            "INSERT OR IGNORE INTO device_only VALUES(?1)"
+        } else {
+            "DELETE FROM device_only WHERE local_budget_id=?1"
+        };
+        self.connection.execute(sql, [id]).map(|_| ()).map_err(error)
     }
     pub fn recovery_hint(&self, id: &str) -> Result<Option<Value>> {
         read_json(

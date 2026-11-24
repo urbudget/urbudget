@@ -234,7 +234,11 @@ struct LibraryView: View {
         return Button { if deletionConflict { libraryAction("review_deletion", entry) } else if !trashed && !recovery { open(entry) } } label: {
             VStack(alignment: .leading) {
                 LibraryBudgetLabel(entry: entry)
-                Text(deletionConflict ? String(localized: "Newer changes need review before deletion") : libraryStatus(entry.text("status")))
+                // A copy kept after sync was reset or its account copy went away: a tap doesn't open
+                // it, so the row says how it comes back.
+                Text(deletionConflict ? String(localized: "Newer changes need review before deletion")
+                     : recovery ? String(localized: "Kept copy. Hold to recover it as a new budget.")
+                     : libraryStatus(entry.text("status")))
                     .font(.caption).foregroundStyle(Color.secondary)
             }
         }
@@ -282,7 +286,7 @@ struct LibraryView: View {
 
     private func libraryStatus(_ value: String) -> String {
         switch value {
-        case "Saved on this device": return String(localized: "Saved on device")
+        case "Saved on this device", "local_only": return String(localized: "Saved on device")
         case "In Trash": return String(localized: "Trash")
         case "Waiting", "queued", "waiting", "Deletion waiting": return String(localized: "Waiting to sync")
         case "Available online", "Download removed": return String(localized: "Available to download")

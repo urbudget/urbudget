@@ -300,7 +300,12 @@ internal fun CloudScreen(vm: BudgetViewModel) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 when (state) {
                                     "cloud_only" -> if (sync?.optInt("protocol", 1) != 2) SecondaryButton(stringResource(R.string.cloud_download_open), { call("sync_download", JSONObject().put("id", entry.text("id"))) { id -> vm.service("open_budget", JSONObject().put("id", id)) } }, enabled = !busy)
-                                    "local_only" -> if (sync?.optInt("protocol", 1) != 2) SecondaryButton(stringResource(R.string.cloud_start_syncing), { call("sync_track", JSONObject().put("ids", JSONArray().put(entry.text("id")))) { vm.service("sync_now") } }, enabled = !busy)
+                                    // A budget kept only on this device, on either sync: one tap adds it to the account.
+                                    "local_only" -> SecondaryButton(stringResource(R.string.cloud_start_syncing), {
+                                        val ids = JSONArray().put(entry.text("id"))
+                                        if (sync?.optInt("protocol", 1) == 2) call("sync_enable", JSONObject().put("enabled", true).put("ids", ids)) { vm.service("sync_now") }
+                                        else call("sync_track", JSONObject().put("ids", ids)) { vm.service("sync_now") }
+                                    }, enabled = !busy)
                                     "conflict" -> PrimaryButton(stringResource(R.string.cloud_review_differences), { pendingBudget = entry; dialog = "conflict" }, enabled = !busy, color = ur.warning)
                                 }
                                 if (sync?.optInt("protocol", 1) != 2 && state != "local_only") TextButton({ pendingBudget = entry; dialog = "removeCloud" }, enabled = !busy) { Text(stringResource(R.string.cloud_remove_copy), color = ur.negative) }

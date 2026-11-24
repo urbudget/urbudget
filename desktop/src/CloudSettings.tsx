@@ -776,8 +776,8 @@ export function SyncSettings({
       </span>
       <span className="sync-actions">
         {busyId === b.id && <LoaderCircle size={14} className="spin" />}
-        {status.sync.protocol !== 2 && b.state === "local_only" && (
-          <button className="secondary" disabled={!!busyId} onClick={() => void act(b.id, () => cloud.syncTrack([b.id]))}>
+        {b.state === "local_only" && (
+          <button className="secondary" disabled={!!busyId} onClick={() => void act(b.id, () => (status.sync.protocol === 2 ? cloud.syncAdd([b.id]) : cloud.syncTrack([b.id])))}>
             {t("Sync this budget")}
           </button>
         )}

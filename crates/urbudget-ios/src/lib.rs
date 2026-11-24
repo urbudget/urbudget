@@ -111,11 +111,48 @@ pub unsafe extern "C" fn urbudget_service(request: *const c_char) -> *mut c_char
             return Err("Unsupported service version".into());
         }
         let runtime = SERVICES.get().ok_or("Initialize the native services first.")?;
-        urbudget_services::block_on(runtime.dispatch(&request.method, request.params))
+        on_service_stack(move || urbudget_services::block_on(runtime.dispatch(&request.method, request.params)))
     })
     .unwrap_or_else(|_| Err(t!("The service could not complete this request.")));
     into_c(reply(result))
 }
+
+/// The stack a service call runs on. Swift calls in from its concurrency threads, whose stacks
+/// are 512 KB. A sync pass nests its futures deeply: an unoptimized build overflows that stack
+/// as soon as a pass has a budget to work on (the app dies with a bus error at the guard page),
+/// and an optimized one has less to spare with everything the engine gains.
+const SERVICE_STACK: usize = 8 * 1024 * 1024;
+
+/// Runs `work` on a thread of its own with `SERVICE_STACK` to use, and waits for it, so the
+/// caller sees the same blocking call. The thread takes the caller's urgency, or the system
+/// would run a call the screen is waiting for behind background work.
+fn on_service_stack<T: Send>(work: impl FnOnce() -> Result<T, String> + Send) -> Result<T, String> {
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("urbudget-service".into())
+            .stack_size(SERVICE_STACK)
+            .spawn_scoped(scope, || {
+                raise_urgency();
+                work()
+            })
+            .map_err(|e| e.to_string())?
+            .join()
+            .unwrap_or_else(|_| Err(t!("The service could not complete this request.")))
+    })
+}
+
+#[cfg(target_vendor = "apple")]
+fn raise_urgency() {
+    extern "C" {
+        fn pthread_set_qos_class_self_np(qos_class: u32, relative_priority: i32) -> i32;
+    }
+    /// QOS_CLASS_USER_INITIATED, as Swift's calling threads have (<sys/qos.h>).
+    const USER_INITIATED: u32 = 0x19;
+    // SAFETY: sets this thread's own scheduling class; a refusal leaves it as it was.
+    unsafe { pthread_set_qos_class_self_np(USER_INITIATED, 0) };
+}
+#[cfg(not(target_vendor = "apple"))]
+fn raise_urgency() {}
 
 /// Releases a string returned by any `urbudget_` function.
 ///
