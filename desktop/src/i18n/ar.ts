@@ -94,7 +94,7 @@ export const ar: Catalog = {
   "Imported from YNAB: {accounts}, {rows} ({transfers}). Checked {checks}; {differences}.": "المستورَد من YNAB: {accounts}، و{rows} ({transfers}). جرى التحقق من {checks}؛ {differences}.",
   "In Assigned: save and move to the next category": "في المخصَّص: الحفظ والانتقال إلى الفئة التالية",
   "In the summary above the categories.": "في الملخص أعلى الفئات.",
-  "Install updates by themselves": "تثبيت التحديثات تلقائيًا",
+  "Auto update": "التحديث التلقائي",
   "It didn't install by itself last time, so it waits for you. Your budget is saved first.": "لم يُثبَّت تلقائيًا في المرة السابقة، لذا ينتظرك. تُحفظ ميزانيتك أولًا.",
   "It installs when you choose. Your budget is saved first.": "يُثبَّت متى اخترت. تُحفظ ميزانيتك أولًا.",
   "Jump to the first or last row, or a page at a time": "الانتقال إلى الصف الأول أو الأخير، أو صفحةً في كل مرة",

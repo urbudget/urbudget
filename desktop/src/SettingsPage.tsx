@@ -398,7 +398,7 @@ export function SettingsPage({
               {desktop && !updates.asksPassword && (
                 <Toggle
                   pref="autoUpdate"
-                  title={t("Install updates by themselves")}
+                  title={t("Auto update")}
                   help={t("Once one has downloaded, UrBudget installs it when it has sat unused for a while (a Microsoft Store copy, also when you close it), saving your budget first. Off, updates wait for you to install them.")}
                 />
               )}
