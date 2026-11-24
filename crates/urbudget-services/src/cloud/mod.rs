@@ -1,6 +1,9 @@
 //! UrBudget's online parts, all optional: an account (email sign-in codes, no password) and
 //! end-to-end encrypted sync for subscribers. Budgeting never needs either of them.
+mod codes;
 pub mod crypto;
+pub mod pairing;
+pub mod recovery;
 pub mod sync;
 mod notifications;
 pub mod v2;
@@ -103,6 +106,9 @@ pub struct Cloud {
     memory_token: Mutex<Option<String>>,
     account_epoch: AtomicU64,
     v2_keys: Mutex<std::collections::BTreeMap<(String,String),crypto::Key>>,
+    /// Recovery codes not yet confirmed saved, by account, where there is no credential store
+    /// to keep them in (`recovery::keep`).
+    kept_codes: Mutex<std::collections::BTreeMap<String, String>>,
 }
 
 /// An immutable authorization snapshot. A running operation must never pick up another login.
@@ -155,6 +161,7 @@ impl Cloud {
             memory_token: Mutex::new(None),
             account_epoch: AtomicU64::new(0),
             v2_keys: Mutex::default(),
+            kept_codes: Mutex::default(),
         }
     }
     fn email(&self) -> Option<String> {
@@ -461,7 +468,13 @@ pub async fn account_open(cloud: &Cloud, next: String) -> Result<(), String> {
 /// Delete the signed-in account without sending Android users through a payment website.
 pub async fn account_delete(cloud: &Cloud, confirm: String) -> Result<Status, String> {
     let _one = cloud.sync.operation().await?;
+    let account = cloud.selected_account();
     cloud.call(reqwest::Method::DELETE, "/me", Some(json!({ "confirm": confirm })), true).await?;
+    // Signing out keeps a recovery code nobody has confirmed saving, for when they sign back
+    // in. A deleted account has nothing left for it to open.
+    if let Some(account) = account {
+        let _ = recovery::forget(cloud, &account);
+    }
     cloud.forget_account()?;
     Ok(cloud.status())
 }

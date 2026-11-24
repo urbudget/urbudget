@@ -13,6 +13,10 @@
          Needs the foreground service declaration on Play: data sync, started by the user from Bank messages. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <!-- Only to scan the one-time code that adds a device to sync, asked for when someone taps Scan
+         (ui/CodeScanner.kt). Frames are read on the phone and kept nowhere. A code can always be typed. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"

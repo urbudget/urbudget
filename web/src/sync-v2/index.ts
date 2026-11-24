@@ -4,7 +4,7 @@ import type { AppEnv } from "../env";
 import { refreshGooglePurchases } from "../billing/google";
 import { syncActive } from "../sync";
 import { ApiError, now, rateLimit } from "../util";
-import { counter, hasBlob, manifestDigest, parseCancellationManifest, parseManifest, validId, type Head, type Manifest } from "./protocol";
+import { counter, hasBlob, manifestDigest, parseCancellationManifest, parseManifest, sealedKey, validId, validRecovery, type Head, type Manifest } from "./protocol";
 import { account, cancelUnprepared, checkSequence, finish, headJson, installation, mutationState, prepare, register, requireProtocolAccess, requirePublication, staged, statement } from "./repository";
 import { uploadCiphertext } from "./upload";
 
@@ -55,12 +55,101 @@ syncV2.get("/bootstrap", async c => {
   await refreshGooglePurchases(c.env, user(c));
   const a = await account(c.env.DB, user(c));
   const legacy = !a || a.protocol === 1 ? await statement(c.env.DB, "SELECT CAST(generation AS TEXT) AS generation,salt,key_check FROM sync_keys WHERE user_id=$user", { user: user(c) }).first<{ generation: string; salt: string; key_check: string }>() : null;
-  return c.json({ accountId: user(c), protocol: a?.protocol ?? 1,
-    keyGeneration: a?.protocol === 2 ? a.key_generation : legacy?.generation ?? null,
+  const keyGeneration = a?.protocol === 2 ? a.key_generation : legacy?.generation ?? null;
+  return c.json({ accountId: user(c), protocol: a?.protocol ?? 1, keyGeneration,
     salt: a?.protocol === 2 ? a.salt : legacy?.salt ?? null, check: a?.protocol === 2 ? a.key_check : legacy?.key_check ?? null,
+    // What the key is made from, so a device knows what to ask for: a recovery code the app made
+    // ("code") or a passphrase someone chose. `recovery` is a replacement recovery code's copy of the key.
+    secret: keyGeneration === null ? null : a?.protocol === 2 && a.key_secret === "code" ? "code" : "passphrase",
+    recovery: a?.protocol === 2 && a.recovery_salt && a.recovery_wrapped ? { salt: a.recovery_salt, wrapped: a.recovery_wrapped } : null,
     catalogEpoch: a?.catalog_epoch ?? null, highwater: a?.catalog_sequence ?? "0", minCursor: a?.min_cursor ?? "0",
     entitlement: { active: await syncActive(c.env.DB, user(c)) }, activationEnabled: c.env.SYNC_V2_ENABLED === "1", publicationPaused: c.env.SYNC_V2_PUBLICATION_PAUSED === "1" });
 });
+
+// A replacement recovery code. A device that holds the key makes a new code and leaves here a
+// copy of the key sealed with a key stretched from it, replacing any earlier copy. The key, its
+// generation and every budget stay as they are. The server can't tell a right copy from a wrong
+// one: a device that later opens it checks the result against `check` before keeping it.
+syncV2.put("/recovery", async c => {
+  const body = await jsonBody(c.req.raw);
+  if (!validRecovery({ salt: body.salt, wrapped: body.wrapped })) throw new ApiError(400, "invalid_recovery", "The recovery details are malformed.");
+  await rateLimit(c.env.DB, `sync-v2:recovery:${user(c)}`, 20, 3600);
+  const p = { user: user(c), generation: typeof body.keyGeneration === "string" ? body.keyGeneration : "", salt: body.salt as string, wrapped: body.wrapped as string, at: now() };
+  const changed = await statement(c.env.DB, `UPDATE sync_accounts_v2 SET recovery_salt=$salt,recovery_wrapped=$wrapped,updated_at=$at
+    WHERE user_id=$user AND protocol=2 AND key_generation=$generation`, p).run();
+  if (!changed.meta.changes) {
+    const a = await account(c.env.DB, user(c));
+    if (a?.protocol !== 2 || a.key_generation === null) throw new ApiError(409, "upgrade_required", "Activate sync v2 for this account first.");
+    throw new ApiError(409, "sync_key_changed", "Sync was reset on another device. Unlock sync on this device again.");
+  }
+  return c.json({ ok: true });
+});
+
+// Device approval. A device that holds the sync key leaves it here sealed with a one-time code
+// from a screen; the new device, given that code by camera or keyboard, collects it once. The
+// server sees neither the code nor the key. Both protocols use the same key material, so this
+// needs no activation and reads the generation as bootstrap does.
+const PAIRING_MS = 5 * 60_000, MAX_PAIRINGS = 3;
+function pairingId(c: Context<AppEnv>) {
+  const id = c.req.param("id") ?? "";
+  if (!/^[a-f0-9]{32}$/.test(id)) throw new ApiError(400, "invalid_pairing", "The pairing ID is invalid.");
+  return id;
+}
+async function keyGeneration(c: Context<AppEnv>) {
+  const a = await account(c.env.DB, user(c));
+  if (a?.protocol === 2) return a.key_generation;
+  return await statement(c.env.DB, "SELECT CAST(generation AS TEXT) AS generation FROM sync_keys WHERE user_id=$user", { user: user(c) }).first<string>("generation");
+}
+syncV2.put("/pairings/:id", async c => {
+  const id = pairingId(c), body = await jsonBody(c.req.raw);
+  if (!sealedKey(body.wrapped)) throw new ApiError(400, "invalid_pairing", "The sealed key is malformed.");
+  const generation = await keyGeneration(c);
+  if (generation === null) throw new ApiError(404, "no_key", "Set up sync on this account first.");
+  if (body.keyGeneration !== generation) throw new ApiError(409, "sync_key_changed", "Sync was reset on another device. Unlock sync on this device again.");
+  await rateLimit(c.env.DB, `sync-v2:pairing:${user(c)}`, 30, 3600);
+  const p = { user: user(c), id, wrapped: body.wrapped, generation, at: now(), expires: new Date(Date.now() + PAIRING_MS).toISOString(), limit: MAX_PAIRINGS };
+  await c.env.DB.batch([
+    statement(c.env.DB, "DELETE FROM sync_pairings_v2 WHERE user_id=$user AND expires_at<=$at", p),
+    statement(c.env.DB, `INSERT INTO sync_pairings_v2(user_id,id,wrapped,key_generation,expires_at)
+      SELECT $user,$id,$wrapped,$generation,$expires WHERE (SELECT COUNT(*) FROM sync_pairings_v2 WHERE user_id=$user AND id<>$id AND collected=0)<$limit
+      ON CONFLICT(user_id,id) DO UPDATE SET wrapped=excluded.wrapped,key_generation=excluded.key_generation,expires_at=excluded.expires_at,collected=0`, p),
+  ]);
+  const stored = await statement(c.env.DB, "SELECT expires_at FROM sync_pairings_v2 WHERE user_id=$user AND id=$id AND wrapped=$wrapped", p).first<string>("expires_at");
+  if (!stored) throw new ApiError(429, "too_many_pairings", "Too many devices are waiting to be added. Finish or cancel one first.");
+  return c.json({ id, expiresAt: stored });
+});
+// Asked every few seconds by a new device showing its own code, until a device that syncs has
+// approved it, and by a device showing an offer, until the new one has collected it: about a
+// hundred times each in the five minutes a code lasts.
+const pairingAsked = (c: Context<AppEnv>) => rateLimit(c.env.DB, `sync-v2:pairing-fetch:${user(c)}`, 900, 3600);
+syncV2.get("/pairings/:id", async c => {
+  const id = pairingId(c);
+  await pairingAsked(c);
+  // Marked taken in one statement: a second device, or a second try, finds nothing. The sealed
+  // key is blanked in the same transaction, and the marker stays until the code would have run
+  // out, for `/state`.
+  const p = { user: user(c), id, at: now() };
+  const [taken] = await c.env.DB.batch<{ wrapped: string; key_generation: string }>([
+    statement(c.env.DB, "UPDATE sync_pairings_v2 SET collected=1 WHERE user_id=$user AND id=$id AND collected=0 AND expires_at>$at RETURNING wrapped,key_generation", p),
+    statement(c.env.DB, "UPDATE sync_pairings_v2 SET wrapped='' WHERE user_id=$user AND id=$id AND collected=1", p),
+  ]);
+  const row = taken.results[0];
+  if (!row) throw new ApiError(404, "pairing_not_found", "That code has expired or was already used. Make a new one on the other device.");
+  return c.json({ wrapped: row.wrapped, keyGeneration: row.key_generation });
+});
+// Whether a sealed key is still waiting, or was collected. Reads only, so the device showing an
+// offer can close its screen once the new device has the key, and say so.
+syncV2.get("/pairings/:id/state", async c => {
+  const id = pairingId(c);
+  await pairingAsked(c);
+  const row = await statement(c.env.DB, "SELECT collected FROM sync_pairings_v2 WHERE user_id=$user AND id=$id AND expires_at>$at", { user: user(c), id, at: now() }).first<{ collected: number }>();
+  return c.json({ waiting: !!row && !row.collected, collected: !!row?.collected });
+});
+syncV2.delete("/pairings/:id", async c => {
+  await statement(c.env.DB, "DELETE FROM sync_pairings_v2 WHERE user_id=$user AND id=$id", { user: user(c), id: pairingId(c) }).run();
+  return c.json({ ok: true });
+});
+
 syncV2.post("/installations", async c => {
   const body = await jsonBody(c.req.raw);
   if (!validId(body.installationId)) throw new ApiError(400, "invalid_installation", "Provide a random installation ID.");

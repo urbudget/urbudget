@@ -1396,9 +1396,22 @@ impl Runtime {
                 value(cloud::sync::sync_now(&self.cloud, &self.db, &self.library, clean).await?)
             }
             "sync_has_key" => value(cloud::sync::sync_has_key(&self.cloud).await?),
-            "sync_setup" => cloud::sync::sync_setup(&self.cloud, &self.library, text("passphrase")?).await,
+            "sync_key_info" => cloud::sync::sync_key_info(&self.cloud, &self.library).await,
+            // Without a passphrase these make a recovery code here and answer with it as `recoveryCode`.
+            "sync_setup" => cloud::sync::sync_setup(&self.cloud, &self.library, optional(&p, "passphrase")?).await,
+            // Whatever was scanned or typed: a device code, the recovery code or the passphrase.
+            "sync_unlock" => cloud::sync::sync_unlock(&self.cloud, &self.library, text("secret")?).await,
+            "sync_recovery_create" => cloud::recovery::create(&self.cloud, &self.library).await,
+            "sync_recovery_unsaved" => cloud::recovery::unsaved_code(&self.cloud, &self.library),
+            "sync_recovery_saved" => { cloud::recovery::saved(&self.cloud)?; Ok(Value::Null) }
+            "sync_pair_offer" => cloud::pairing::offer(&self.cloud, &self.library).await,
+            "sync_pair_state" => cloud::pairing::state(&self.cloud, &text("id")?).await,
+            "sync_pair_cancel" => { cloud::pairing::cancel(&self.cloud, &text("id")?).await?; Ok(Value::Null) }
+            "sync_pair_request" => cloud::pairing::request(&self.cloud),
+            "sync_pair_wait" => cloud::pairing::wait(&self.cloud, &self.library, &text("code")?).await,
+            "sync_pair_approve" => { cloud::pairing::approve(&self.cloud, &self.library, &text("code")?).await?; Ok(Value::Null) }
             "sync_upgrade" => cloud::sync::sync_upgrade(&self.cloud, &self.library, optional(&p, "passphrase")?).await,
-            "sync_reset" => { cloud::sync::sync_reset(&self.cloud, &self.library, text("passphrase")?).await?; Ok(Value::Null) }
+            "sync_reset" => cloud::sync::sync_reset(&self.cloud, &self.db, &self.library, optional(&p, "passphrase")?).await,
             "sync_track" => { cloud::sync::sync_track(&self.cloud, field(&p, "ids")?).await?; Ok(Value::Null) }
             "sync_download" => value(cloud::sync::sync_download(&self.cloud, &self.library, text("id")?).await?),
             "sync_resolve" => {

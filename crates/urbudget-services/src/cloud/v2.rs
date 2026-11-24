@@ -99,13 +99,13 @@ fn legacy_revision(head: &Head) -> Option<u64> {
     }
 }
 
-struct Transport<'a> {
+pub(super) struct Transport<'a> {
     cloud: &'a Cloud,
     session: Session,
     installation: String,
 }
 impl<'a> Transport<'a> {
-    fn new(cloud: &'a Cloud, installation: String) -> Result<Self> {
+    pub(super) fn new(cloud: &'a Cloud, installation: String) -> Result<Self> {
         Ok(Self {
             cloud,
             session: cloud.session().map_err(String::from)?,
@@ -142,7 +142,7 @@ impl<'a> Transport<'a> {
         }
         Err(format!("{}: {}", error.code, error.message))
     }
-    async fn json(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value> {
+    pub(super) async fn json(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value> {
         let mut request = self.request(method, path)?;
         if let Some(body) = body {
             request = request.json(&body);
@@ -217,7 +217,7 @@ impl<'a> Transport<'a> {
 fn key_service(account: &str, generation: &str) -> String {
     super::service(&format!("com.urbudget.sync-v2.{account}.{generation}"))
 }
-fn read_key(cloud: &Cloud, account: &str, generation: &str) -> Option<crypto::Key> {
+pub(super) fn read_key(cloud: &Cloud, account: &str, generation: &str) -> Option<crypto::Key> {
     super::vault::read(&key_service(account, generation))
         .and_then(|k| BASE64.decode(k).ok())
         .and_then(|k| k.try_into().ok())
@@ -282,7 +282,7 @@ fn upgrade_offered(bootstrap: &Value) -> bool {
 /// moved account is therefore byte for byte the v1 key this device saved when the passphrase
 /// was entered here. The check rules out a stale key: after a passphrase reset elsewhere it no
 /// longer opens the account's check, and the person is asked for the passphrase instead.
-fn verified_key(key: Option<crypto::Key>, bootstrap: &Value) -> Option<crypto::Key> {
+pub(super) fn verified_key(key: Option<crypto::Key>, bootstrap: &Value) -> Option<crypto::Key> {
     let check = BASE64.decode(bootstrap["check"].as_str()?).ok()?;
     key.filter(|key| crypto::matches_check(key, &check))
 }
@@ -299,12 +299,40 @@ fn upgrade_status(state: &Value, signed_in: bool, saved: impl FnOnce() -> Option
 
 /// The current generation's key, adopting this device's verified protocol-1 key when the
 /// account was moved to v2 elsewhere (see `verified_key`), so it keeps syncing unlocked.
-fn current_key(cloud: &Cloud, account: &str, generation: &str, bootstrap: &Value) -> Option<crypto::Key> {
+pub(super) fn current_key(cloud: &Cloud, account: &str, generation: &str, bootstrap: &Value) -> Option<crypto::Key> {
     read_key(cloud, account, generation).or_else(|| {
         let key = verified_key(cloud.sync.key(), bootstrap)?;
         store_key(cloud, account, generation, key).ok()?;
         Some(key)
     })
+}
+
+/// The key this device holds for the account's current generation, on either protocol, when
+/// it still opens the account's key check.
+pub(super) fn held_key(cloud: &Cloud, account: &str, bootstrap: &Value) -> Option<crypto::Key> {
+    let generation = bootstrap["keyGeneration"].as_str()?;
+    let key = if bootstrap["protocol"] == 2 {
+        current_key(cloud, account, generation, bootstrap)
+    } else {
+        cloud.sync.key()
+    };
+    verified_key(key, bootstrap)
+}
+
+/// What the account's key is made from, as far as `bootstrap` says: a recovery code the app
+/// made (`"code"`) or a passphrase someone chose. `None` when the account has no key yet. An
+/// account from before recovery codes says nothing, and its key is from a passphrase.
+pub(super) fn secret_kind(bootstrap: &Value) -> Option<&'static str> {
+    bootstrap["keyGeneration"].as_str()?;
+    Some(if bootstrap["secret"] == "code" { "code" } else { "passphrase" })
+}
+
+/// Notes the recovery copy the server now holds for the account's key.
+pub(super) fn save_recovery(library: &Library, account: &str, recovery: &Value) -> Result<()> {
+    let mut library = library.lock();
+    let mut state = library.account_state(account)?;
+    state["bootstrap"]["recovery"] = recovery.clone();
+    library.set_account_state(account, &state)
 }
 
 pub fn is_active(cloud: &Cloud, library: &Library) -> bool {
@@ -337,6 +365,11 @@ pub(super) fn decorate_status(cloud: &Cloud, catalog: &budgets::Budgets, status:
     let Ok(state) = catalog.account_state(&account) else {
         return;
     };
+    if cloud.token().is_some() {
+        status.secret = secret_kind(&state["bootstrap"]);
+        status.recovery = state["bootstrap"]["recovery"].is_object();
+        status.recovery_unsaved = super::recovery::unsaved(cloud, &account, &state["bootstrap"]).is_some();
+    }
     if state["protocol"] != 2 {
         (status.upgrade_available, status.upgrade_needs_passphrase) =
             upgrade_status(&state, cloud.token().is_some(), || cloud.sync.key());
@@ -533,7 +566,7 @@ fn decrypt(key: &crypto::Key, account: &str, head: &Head, bytes: &[u8]) -> Resul
 
 /// Probe before registering: legacy clients have no accountId and old Workers have no v2 routes.
 /// A known v2 account must never silently fall back to the legacy publication engine.
-async fn probe_bootstrap(cloud: &Cloud, library: &Library) -> Result<Option<(String, Value)>> {
+pub(super) async fn probe_bootstrap(cloud: &Cloud, library: &Library) -> Result<Option<(String, Value)>> {
     let transport = Transport::new(cloud, String::new())?;
     let bootstrap = match transport.json(Method::GET, "/bootstrap", None).await {
         Ok(value) => value,
@@ -824,6 +857,18 @@ async fn deliver_inner(
         if slot.manifest.get("key").is_some() {
             state["bootstrap"]["salt"] = slot.manifest["key"]["salt"].clone();
             state["bootstrap"]["check"] = slot.manifest["key"]["check"].clone();
+            // A new key has no recovery copy, and says what it is made from.
+            state["bootstrap"]["secret"] = match slot.manifest["key"]["secret"].as_str() {
+                Some(secret) => json!(secret),
+                None => json!("passphrase"),
+            };
+            state["bootstrap"]["recovery"] = Value::Null;
+        }
+        if receipt["kind"] == "keyReset" {
+            // The reset this installation asked for: its budgets go back into sync by
+            // themselves (`reenroll_after_reset`). Written with the new generation, and again
+            // on every replay of this receipt, so it can't be lost between the two.
+            state[REENROLL] = json!(generation);
         }
         library.set_account_state(account, &state)?;
     }
@@ -923,53 +968,95 @@ fn set_up_on_v2(bootstrap: &Value, reset: bool) -> bool {
 
 /// What proves this device may hold the account's content key.
 #[derive(Clone, Copy)]
-enum Secret<'a> {
-    /// Typed by the person: it creates, resets, or derives the current generation's key.
+pub(super) enum Secret<'a> {
+    /// Typed by the person, a passphrase or a recovery code as it reads: it creates, resets,
+    /// or derives the current generation's key.
     Passphrase(&'a str),
+    /// Nothing typed: a first setup or a reset makes a recovery code here and the key from it,
+    /// exactly as a passphrase would. The answer carries the code as `recoveryCode`.
+    Generate,
     /// The protocol-1 key this device saved, used only once it opens the account's key check
     /// (`verified_key`). It can move or unlock an existing account, never create or reset one.
     Saved,
+    /// The key itself, handed over by a device that has it (`pairing`) or opened from the
+    /// recovery copy (`recovery`). Like `Saved`, kept only once it opens the key check.
+    Key(crypto::Key),
 }
 
 /// The person's answer when the saved key can't stand in for the passphrase.
 fn passphrase_needed() -> String {
     t!("Enter your sync passphrase to move this account to the new sync.")
 }
+/// A key change this device started can only be finished with what started it.
+fn pending_secret_needed() -> String {
+    t!("This device was in the middle of changing the sync key. Enter the passphrase or recovery code it was started with.")
+}
+fn already_set_up() -> String {
+    t!("Sync is already set up for this account. Unlock it with a code from a device that syncs, or with your recovery code.")
+}
+pub(super) fn not_set_up() -> String {
+    t!("Sync isn't set up for this account yet. Turn it on first.")
+}
+pub(super) fn key_changed() -> String {
+    t!("Sync was reset on another device. Unlock sync on this device again.")
+}
 
+/// Sets sync up, unlocks it or resets it with `passphrase`. With `None`, a first setup or a
+/// reset makes a recovery code here and the key from it; the answer then carries the code as
+/// `recoveryCode`.
 pub async fn try_setup(
     cloud: &Cloud,
     library: &Library,
-    passphrase: &str,
+    passphrase: Option<&str>,
     reset: bool,
 ) -> Result<Option<Value>> {
-    setup(cloud, library, Secret::Passphrase(passphrase), reset).await
+    try_unlock(cloud, library, passphrase.map_or(Secret::Generate, Secret::Passphrase), reset).await
 }
 
 /// Moves a protocol-1 account to protocol 2 with the key this device saved for protocol 1, or
 /// unlocks one another device already moved. `Ok(None)` when urbudget.app doesn't accept moves.
 pub async fn try_saved_key(cloud: &Cloud, library: &Library) -> Result<Option<Value>> {
-    setup(cloud, library, Secret::Saved, false).await
+    try_unlock(cloud, library, Secret::Saved, false).await
 }
 
-async fn setup(
+/// `Ok(None)` when this account doesn't go through protocol 2 here: the caller's protocol-1
+/// engine does it.
+pub(super) async fn try_unlock(
     cloud: &Cloud,
     library: &Library,
     secret: Secret<'_>,
     reset: bool,
 ) -> Result<Option<Value>> {
     let _operation = cloud.sync.operation().await?;
-    match setup_once(cloud, library, secret, reset).await {
+    let done = match setup_once(cloud, library, secret, reset).await {
         // A restored data folder unlocks under its new identity in the same attempt.
         Err(error) if installation_replaced(&error) => setup_once(cloud, library, secret, reset).await,
         result => result,
+    }?;
+    let Some((mut answer, owes_code)) = done else { return Ok(None) };
+    if owes_code {
+        // This finished a key change whose own code is gone, so the person has nothing that
+        // unlocks another device. A replacement code gives them one.
+        answer["recoveryCode"] = super::recovery::replace(cloud, library).await?;
     }
+    Ok(Some(answer))
 }
+
+fn unlocked_answer(created: bool, code: Option<String>) -> Value {
+    let mut answer = json!({"created":created,"protocol":2});
+    if let Some(code) = code {
+        answer["recoveryCode"] = json!(code);
+    }
+    answer
+}
+
+/// The answer, and whether it still owes the person a recovery code (`try_unlock`).
 async fn setup_once(
     cloud: &Cloud,
     library: &Library,
     secret: Secret<'_>,
     reset: bool,
-) -> Result<Option<Value>> {
+) -> Result<Option<(Value, bool)>> {
     let Some((account, bootstrap)) = probe_bootstrap(cloud, library).await? else { return Ok(None); };
     if !set_up_on_v2(&bootstrap, reset) { return Ok(None); }
     let (account, transport, mut bootstrap) = connect_bootstrap(cloud, library, account, bootstrap).await?;
@@ -979,26 +1066,42 @@ async fn setup_once(
         }
     }
     save_bootstrap(library, &account, &bootstrap)?;
+    let generating = matches!(secret, Secret::Generate);
+    // Set when this attempt finishes a key change that was started without a passphrase and
+    // the code that change made is no longer here.
+    let mut owes_code = false;
     // A pending key change owns its own salt and key check, including after process death.
     let pending = library.lock().pending_delivery(&account)?;
     if let Some(slot) = pending {
+        let mut finished_with = None;
         let pending_key_verified = if let Some(salt) = slot.manifest["key"]["salt"].as_str() {
-            // Only its own passphrase can finish a key change: the saved key predates it.
-            let Secret::Passphrase(passphrase) = secret else { return Err(passphrase_needed()) };
             let salt = BASE64.decode(salt).map_err(|e| e.to_string())?;
-            let key = crypto::derive(passphrase, &salt)?;
-            let check = BASE64
-                .decode(slot.manifest["key"]["check"].as_str().unwrap_or_default())
-                .map_err(|e| e.to_string())?;
-            if !crypto::matches_check(&key, &check) {
-                return Err("Enter the passphrase used for the pending key change.".into());
-            }
-            store_key(
-                cloud,
-                &account,
-                &format!("pending-{}", slot.operation_id),
-                key,
-            )?;
+            let check = slot.manifest["key"]["check"].as_str().unwrap_or_default();
+            let opens = |key: &crypto::Key| BASE64.decode(check).is_ok_and(|check| crypto::matches_check(key, &check));
+            let service = format!("pending-{}", slot.operation_id);
+            // Only what started a key change can finish it: the saved key predates it.
+            let key = match secret {
+                Secret::Passphrase(passphrase) => Some(crypto::derive(passphrase, &salt)?),
+                // The code that attempt made is kept until someone confirms saving it. Failing
+                // that, the key it made is still in the vault.
+                Secret::Generate => match super::recovery::kept_for(cloud, &account, check) {
+                    Some(code) => {
+                        let key = crypto::derive(&code, &salt)?;
+                        finished_with = Some(code);
+                        Some(key)
+                    }
+                    None => read_key(cloud, &account, &service),
+                },
+                Secret::Saved | Secret::Key(_) => None,
+            };
+            let Some(key) = key.filter(opens) else {
+                return Err(match secret {
+                    Secret::Passphrase(_) => "Enter the passphrase used for the pending key change.".into(),
+                    _ => pending_secret_needed(),
+                });
+            };
+            store_key(cloud, &account, &service, key)?;
+            owes_code = generating && finished_with.is_none();
             true
         } else {
             false
@@ -1006,41 +1109,49 @@ async fn setup_once(
         let receipt = deliver(&transport, None, library, &account)
             .await?
             .ok_or("The pending key operation disappeared before its outcome was confirmed.")?;
-        if let Some(completed) =
+        if let Some(mut completed) =
             completed_reset_retry(reset, &slot.manifest, &receipt, pending_key_verified)?
         {
             // deliver() durably installed the accepted generation/epoch/key and enabled
             // state. A subsequent offline bootstrap fetch cannot invalidate that success.
-            return Ok(Some(completed));
+            if let Some(code) = finished_with {
+                completed["recoveryCode"] = json!(code);
+            }
+            return Ok(Some((completed, owes_code)));
         }
         bootstrap = transport.json(Method::GET, "/bootstrap", None).await?;
         save_bootstrap(library, &account, &bootstrap)?;
     }
     let created = bootstrap["keyGeneration"].is_null();
-    let passphrase = match secret {
-        Secret::Passphrase(passphrase) => passphrase,
-        Secret::Saved if created => {
-            return Err(t!("This account has no sync passphrase yet. Set up sync to choose one."))
-        }
-        Secret::Saved => "",
-    };
-    if !created && !reset {
-        let check = BASE64
-            .decode(string(&bootstrap, "check")?)
-            .map_err(|e| e.to_string())?;
-        let key = if let Secret::Saved = secret {
-            verified_key(cloud.sync.key(), &bootstrap).ok_or_else(passphrase_needed)?
-        } else {
-            let salt = BASE64
-                .decode(string(&bootstrap, "salt")?)
-                .map_err(|e| e.to_string())?;
-            crypto::derive(passphrase, &salt)?
-        };
-        if !crypto::matches_check(&key, &check) {
-            return Err("That isn't the sync passphrase for this account.".into());
-        }
-        store_key(cloud, &account, &string(&bootstrap, "keyGeneration")?, key)?;
+    if created && matches!(secret, Secret::Saved | Secret::Key(_)) {
+        return Err(not_set_up());
     }
+    if !created && !reset {
+        let generation = string(&bootstrap, "keyGeneration")?;
+        let key = match secret {
+            Secret::Passphrase(passphrase) => {
+                let salt = BASE64
+                    .decode(string(&bootstrap, "salt")?)
+                    .map_err(|e| e.to_string())?;
+                crypto::derive(passphrase, &salt)?
+            }
+            Secret::Saved => verified_key(cloud.sync.key(), &bootstrap).ok_or_else(passphrase_needed)?,
+            Secret::Key(key) => key,
+            // Sync is already on. A device that holds the key gets through, as after an
+            // attempt of its own whose answer was lost; any other is told how to unlock.
+            Secret::Generate => read_key(cloud, &account, &generation).ok_or_else(already_set_up)?,
+        };
+        if verified_key(Some(key), &bootstrap).is_none() {
+            return Err(match secret {
+                Secret::Passphrase(_) => "That isn't the sync passphrase for this account.".into(),
+                Secret::Generate => already_set_up(),
+                Secret::Saved => passphrase_needed(),
+                Secret::Key(_) => key_changed(),
+            });
+        }
+        store_key(cloud, &account, &generation, key)?;
+    }
+    let mut code = None;
     if created || reset || bootstrap["protocol"] != 2 {
         let operation = budgets::new_id();
         let mut manifest = control_manifest(&account, &transport.installation, &operation, &bootstrap, created, reset);
@@ -1048,11 +1159,31 @@ async fn setup_once(
             if super::vault::store().is_none() {
                 return Err("A secure credential store is required to safely create or reset the sync passphrase on this device.".into());
             }
+            let made = match secret {
+                Secret::Generate => Some(super::codes::encode(&super::codes::new(super::codes::Kind::Recovery)?)),
+                _ => None,
+            };
+            let phrase = match (secret, made.as_deref()) {
+                (Secret::Passphrase(passphrase), _) => passphrase,
+                (_, Some(made)) => made,
+                // A new key needs something new to make it from.
+                _ => return Err(not_set_up()),
+            };
             let salt: [u8; crypto::SALT_LEN] = crypto::random()?;
-            let key = crypto::derive(passphrase, &salt)?;
-            manifest["key"] =
-                json!({"salt":BASE64.encode(salt),"check":BASE64.encode(crypto::key_check(&key)?)});
+            let key = crypto::derive(phrase, &salt)?;
+            let check = BASE64.encode(crypto::key_check(&key)?);
+            manifest["key"] = json!({"salt":BASE64.encode(salt),"check":check});
+            match &made {
+                Some(made) => {
+                    manifest["key"]["secret"] = json!("code");
+                    // Kept before the request leaves, so the code outlives a crash or a lost answer.
+                    super::recovery::keep(cloud, &account, made, &check)?;
+                }
+                // A code kept for the key this one replaces would open nothing.
+                None => super::recovery::forget(cloud, &account)?,
+            }
             store_key(cloud, &account, &format!("pending-{operation}"), key)?;
+            code = made;
         }
         let digest = hash(canonical(&manifest).as_bytes());
         library
@@ -1063,16 +1194,21 @@ async fn setup_once(
             .ok_or("The key operation was not queued.")?;
         accepted(&receipt)?;
         if reset {
-            return Ok(Some(json!({"created":created,"protocol":2})));
+            return Ok(Some((unlocked_answer(created, code), false)));
         }
         bootstrap = transport.json(Method::GET, "/bootstrap", None).await?;
     }
     save_bootstrap(library, &account, &bootstrap)?;
-    let mut library = library.lock();
-    let mut state = library.account_state(&account)?;
-    state["enabled"] = json!(true);
-    library.set_account_state(&account, &state)?;
-    Ok(Some(json!({"created":created,"protocol":2})))
+    {
+        let mut library = library.lock();
+        let mut state = library.account_state(&account)?;
+        state["enabled"] = json!(true);
+        library.set_account_state(&account, &state)?;
+    }
+    // A device that already had the key hands back the code it still holds unconfirmed.
+    let code = code.or_else(|| generating.then(|| super::recovery::unsaved(cloud, &account, &bootstrap)).flatten());
+    let owes_code = owes_code && code.is_none();
+    Ok(Some((unlocked_answer(created, code), owes_code)))
 }
 
 #[cfg(test)]
@@ -1368,6 +1504,336 @@ async fn reconcile_catalog(
     state["cursor"] = json!(cursor);
     state["cursorEpoch"] = bootstrap["catalogEpoch"].clone();
     library.set_account_state(account, &state)
+}
+
+/// In an account's saved state: the key generation a reset asked for on this device made.
+/// While it is the account's generation, the budgets this device synced under an older key are
+/// its to enroll again.
+const REENROLL: &str = "reenrollAfterReset";
+
+/// What a reset does with one budget that synced under the key it replaced.
+#[derive(Debug, PartialEq)]
+enum AfterReset {
+    /// Nothing ties it to an older key: made since, enrolled again already, or never uploaded.
+    Current,
+    /// It has a new identity and uploads on this pass.
+    Enrolled,
+    /// Something of it is unresolved. It becomes a copy to recover by hand, as on every other
+    /// device, on the pass after this one (`process_budget`).
+    Kept,
+    /// A request about it holds this installation's delivery slot. Next pass.
+    Waiting,
+}
+
+/// Puts this device's budgets back into sync after a reset it performed.
+///
+/// A reset deletes every budget from the server with the old key, so each device's copies are
+/// all that's left of them, and no device can tell its copy from another's. A device that only
+/// learns of the reset keeps each copy to recover by hand: two devices adding the same budget
+/// again would make two of it. The device that asked for the reset is one device, so here each
+/// budget that was syncing is given a new identity under the new key and uploads again as it
+/// is, with no one doing anything. The other devices receive it as a new budget beside their
+/// own kept copy.
+///
+/// A budget with a conflict waiting for review, or holding a draft that was never saved, is
+/// left for `process_budget` to keep as a copy, as before: what is unresolved about it was
+/// about the cloud version that is gone. One not downloaded to this device has nothing here to
+/// upload. Nothing of the old identity is sent again: the file lets go of its binding and of
+/// any upload prepared for it (`Store::detach_sync`), and the budget's first request under
+/// the new key is a `create` with ids made here.
+///
+/// It needs neither the network nor the content key. Returns the budgets this pass must not
+/// judge by the identity the reset deleted:
+/// - one left to be kept as a copy. Keeping it closes it if it is open, and the pass that runs
+///   inside `sync_reset` reports to no one, so that waits for the next pass, whose report the
+///   app acts on as it does today;
+/// - one whose own request holds the delivery slot, which is enrolled once that settles.
+///
+/// A budget whose file can't be read now is reported in `errors`, which holds it back the same
+/// way, and is tried again on the next pass.
+fn reenroll_after_reset(
+    db: &Database,
+    library: &Library,
+    account: &str,
+    generation: &str,
+    errors: &mut BTreeMap<String, String>,
+) -> Result<std::collections::BTreeSet<String>> {
+    let mut held = std::collections::BTreeSet::new();
+    let mut unfinished = false;
+    let state = library.lock().account_state(account)?;
+    let Some(made) = state[REENROLL].as_str() else {
+        return Ok(held);
+    };
+    // After a later reset elsewhere this device is one of the others.
+    if made == generation {
+        let in_delivery = library.lock().pending_delivery(account)?.and_then(|slot| slot.local_budget_id);
+        let entries = library.lock().try_list_all()?;
+        for entry in entries.iter().filter(|e| {
+            e.account_id.as_deref() == Some(account) && e.lifecycle == "active" && e.availability == "local" && !e.missing
+        }) {
+            // The head cached for its identity says so too: where an earlier attempt stopped
+            // between the file and the catalog, the file has no binding left to say it.
+            let old_head = match entry.remote_id.as_deref() {
+                Some(remote) => head_for(library, account, remote)?.is_some_and(|head| head.key_generation != generation),
+                None => false,
+            };
+            let decided = library_api::with_store(db, library, &entry.id, |store| {
+                let old = match store.sync_binding()? {
+                    Some(binding) => binding.identity.key_generation != generation,
+                    None => old_head,
+                };
+                if !old {
+                    return Ok(AfterReset::Current);
+                }
+                if entry.status == "conflict"
+                    || store.sync_blocked()?
+                    || store.has_unsaved_draft()
+                    || store.read_recovery()?.is_some()
+                    || !store.editor_checkpoints()?.is_empty()
+                {
+                    return Ok(AfterReset::Kept);
+                }
+                if in_delivery.as_deref() == Some(entry.id.as_str()) {
+                    return Ok(AfterReset::Waiting);
+                }
+                store.detach_sync()?;
+                Ok(AfterReset::Enrolled)
+            })
+            .and_then(|decided| {
+                if decided == AfterReset::Enrolled {
+                    library.lock().reenroll(&entry.id, account, &budgets::new_id(), &budgets::new_id())?;
+                }
+                Ok(decided)
+            });
+            match decided {
+                Ok(AfterReset::Kept) => { held.insert(entry.id.clone()); }
+                Ok(AfterReset::Waiting) => { unfinished = true; held.insert(entry.id.clone()); }
+                Ok(AfterReset::Current | AfterReset::Enrolled) => {}
+                Err(error) => { unfinished = true; errors.insert(entry.id.clone(), error); }
+            }
+        }
+        // Not finished: the note stays, and the next pass takes up the budgets left.
+        if unfinished {
+            return Ok(held);
+        }
+    }
+    let mut catalog = library.lock();
+    let mut state = catalog.account_state(account)?;
+    if let Some(object) = state.as_object_mut() {
+        object.remove(REENROLL);
+    }
+    catalog.set_account_state(account, &state)?;
+    Ok(held)
+}
+
+#[cfg(test)]
+mod reenroll_tests {
+    use super::*;
+    use urbudget_core::test_support::sample;
+
+    const ACCOUNT: &str = "account";
+    fn library(dir: &std::path::Path) -> Library {
+        Library(std::sync::Mutex::new(budgets::Budgets::load(dir).unwrap()))
+    }
+    fn head(remote: &str, generation: &str) -> Head {
+        Head {
+            budget_id: remote.into(), incarnation: format!("{remote}-first"), version: "1".into(), key_generation: generation.into(),
+            state: "active".into(), payload: None, updated_sequence: "1".into(), updated_at: now(), deleted_at: None, retained_until: None,
+            device: "this".into(), legacy: None,
+        }
+    }
+    /// A budget on this device that synced under key generation `generation`: its local id.
+    fn synced(library: &Library, remote: &str, generation: &str) -> String {
+        let scope = json!({"catalogEpoch":"epoch"});
+        let head = head(remote, generation);
+        let id = observe(library, ACCOUNT, &scope, None, &head).unwrap();
+        let path = library.lock().database(&id).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut store = Store::open_budget(&path, &id).unwrap();
+        let token = store.status().unwrap().token;
+        let saved = store.save(&sample(), &token).unwrap();
+        store.bind_sync(&Binding {
+            identity: identity(ACCOUNT, &scope, &head).unwrap(), remote_version: "1".into(),
+            acknowledged_local_revision: saved.revision, base: sample(),
+        }).unwrap();
+        drop(store);
+        library.lock().mark_available(&id).unwrap();
+        id
+    }
+    /// What applying this device's own accepted reset leaves in the account's state.
+    fn note(library: &Library, generation: &str) {
+        let mut catalog = library.lock();
+        let mut state = catalog.ensure_account(ACCOUNT).unwrap();
+        state[REENROLL] = json!(generation);
+        catalog.set_account_state(ACCOUNT, &state).unwrap();
+    }
+    fn noted(library: &Library) -> Value {
+        library.lock().account_state(ACCOUNT).unwrap()[REENROLL].clone()
+    }
+    fn row(library: &Library, id: &str) -> budgets::Listing {
+        library.lock().list_all().into_iter().find(|e| e.id == id).unwrap()
+    }
+    fn file(library: &Library, id: &str) -> Store {
+        Store::open_budget(&library.lock().database(id).unwrap(), id).unwrap()
+    }
+    /// The budgets the pass holds back, and the ones it couldn't read.
+    fn run(library: &Library, generation: &str) -> (Vec<String>, Vec<String>) {
+        let mut errors = BTreeMap::new();
+        let held = reenroll_after_reset(&Database::new(None), library, ACCOUNT, generation, &mut errors).unwrap();
+        (held.into_iter().collect(), errors.into_keys().collect())
+    }
+    /// Enrolled again: the same budget, under ids the account never had, with nothing of the
+    /// old identity left to send and its content waiting to upload.
+    fn assert_enrolled_again(library: &Library, id: &str, remote: &str) {
+        let now = row(library, id);
+        assert_eq!((now.lifecycle.as_str(), now.account_id.as_deref()), ("active", Some(ACCOUNT)));
+        assert_ne!(now.remote_id.as_deref(), Some(remote));
+        assert_ne!(now.incarnation, Some(format!("{remote}-first")));
+        assert_eq!(head_for(library, ACCOUNT, now.remote_id.as_deref().unwrap()).unwrap(), None);
+        let store = file(library, id);
+        assert!(store.sync_binding().unwrap().is_none() && store.pending_upload().unwrap().is_none());
+        assert!(store.sync_dirty().unwrap());
+    }
+    fn assert_untouched(library: &Library, id: &str, remote: &str, generation: &str) {
+        let now = row(library, id);
+        assert_eq!((now.lifecycle.as_str(), now.remote_id.as_deref()), ("active", Some(remote)));
+        assert_eq!(file(library, id).sync_binding().unwrap().unwrap().identity.key_generation, generation);
+    }
+
+    #[test]
+    fn the_device_that_reset_enrolls_what_it_was_syncing_and_nothing_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = library(dir.path());
+        let old = synced(&library, "remote-old", "1");
+        let current = synced(&library, "remote-current", "2");
+        let private = library.lock().create().unwrap();
+        // Enrolled and never uploaded: it has no identity the server ever knew.
+        let unsent = library.lock().create().unwrap();
+        {
+            let mut store = file(&library, &unsent);
+            let token = store.status().unwrap().token;
+            store.save(&sample(), &token).unwrap();
+        }
+        library.lock().mark_available(&unsent).unwrap();
+        library.lock().associate(&unsent, ACCOUNT, "remote-unsent", "unsent-first").unwrap();
+        let revision = file(&library, &old).status().unwrap().revision;
+        // A device that only hears of a reset does nothing here: `process_budget` keeps its copies.
+        assert_eq!(run(&library, "2"), Default::default());
+        assert_untouched(&library, &old, "remote-old", "1");
+        note(&library, "2");
+        assert_eq!(run(&library, "2"), Default::default());
+        assert_enrolled_again(&library, &old, "remote-old");
+        let (content, status) = file(&library, &old).saved().unwrap();
+        assert_eq!((content, status.revision), (sample(), revision), "its content is exactly as it was");
+        assert_untouched(&library, &current, "remote-current", "2");
+        assert_eq!(row(&library, &private).account_id, None);
+        assert_eq!(row(&library, &unsent).remote_id.as_deref(), Some("remote-unsent"));
+        assert_eq!(noted(&library), Value::Null, "done once");
+        assert_eq!(library.lock().recovery_hint(&old).unwrap().unwrap()["reenrolledFrom"]["remoteId"], "remote-old");
+    }
+
+    #[test]
+    fn after_a_later_reset_elsewhere_this_device_is_one_of_the_others() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = library(dir.path());
+        let id = synced(&library, "remote", "1");
+        note(&library, "2");
+        assert_eq!(run(&library, "3"), Default::default());
+        assert_untouched(&library, &id, "remote", "1");
+        assert_eq!(noted(&library), Value::Null);
+    }
+
+    #[test]
+    fn an_attempt_that_stopped_between_the_file_and_the_catalog_is_finished() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = library(dir.path());
+        let id = synced(&library, "remote", "1");
+        note(&library, "2");
+        // The file let go of its identity, and the process died before the catalog heard.
+        file(&library, &id).detach_sync().unwrap();
+        assert_eq!(row(&library, &id).remote_id.as_deref(), Some("remote"));
+        assert_eq!(run(&library, "2"), Default::default());
+        assert_enrolled_again(&library, &id, "remote");
+        assert_eq!(noted(&library), Value::Null);
+    }
+
+    #[test]
+    fn an_unresolved_budget_is_left_to_be_kept_as_a_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = library(dir.path());
+        let conflict = synced(&library, "remote-conflict", "1");
+        library.lock().set_entry_status(&conflict, "conflict").unwrap();
+        let draft = synced(&library, "remote-draft", "1");
+        file(&library, &draft).checkpoint_editor(&urbudget_core::sync_storage::EditorCheckpoint {
+            editor_id: "editor".into(), epoch: "one".into(), process_owner: "an earlier run".into(),
+            target: json!({"kind":"transaction"}), baseline: Value::Null, draft: json!({"amount":"-"}),
+        }).unwrap();
+        let removed = synced(&library, "remote-removed", "1");
+        file(&library, &removed).set_sync_blocked(true).unwrap();
+        let trashed = synced(&library, "remote-trashed", "1");
+        library.lock().set_lifecycle(&trashed, "trashed").unwrap();
+        note(&library, "2");
+        // Held back from this pass, so the pass that keeps them as copies is one the app hears from.
+        let mut unresolved = vec![conflict.clone(), draft.clone(), removed.clone()];
+        unresolved.sort();
+        assert_eq!(run(&library, "2"), (unresolved, vec![]));
+        for (id, remote) in [(&conflict, "remote-conflict"), (&draft, "remote-draft"), (&removed, "remote-removed")] {
+            assert_untouched(&library, id, remote, "1");
+        }
+        assert_eq!(row(&library, &trashed).remote_id.as_deref(), Some("remote-trashed"));
+        // Decided at the reset: the next pass holds nothing back, and saving the draft later
+        // doesn't put the budget back by itself.
+        assert_eq!(noted(&library), Value::Null);
+        assert_eq!(run(&library, "2"), Default::default());
+        assert_untouched(&library, &draft, "remote-draft", "1");
+    }
+
+    #[test]
+    fn a_budget_whose_request_is_in_flight_or_whose_file_cant_be_read_waits_for_the_next_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = library(dir.path());
+        let sending = synced(&library, "remote-sending", "1");
+        let broken = synced(&library, "remote-broken", "1");
+        let fine = synced(&library, "remote-fine", "1");
+        // An upload for one of them holds the installation's delivery slot, its outcome unknown.
+        let intent = {
+            let mut store = file(&library, &sending);
+            let (mut edited, _) = store.saved().unwrap();
+            edited.name = "Edited".into();
+            let token = store.status().unwrap().token;
+            let status = store.save(&edited, &token).unwrap();
+            let binding = store.sync_binding().unwrap().unwrap();
+            let intent = UploadIntent {
+                operation_id: "operation".into(), identity: binding.identity, expected_version: "1".into(), local_revision: status.revision,
+                candidate: store.saved().unwrap().0, manifest: json!({"kind":"update"}), payload: vec![1, 2, 3], metadata: "meta".into(), digest: "digest".into(),
+            };
+            store.prepare_upload(&intent, &status.token).unwrap();
+            intent
+        };
+        library.lock().prepare_delivery(ACCOUNT, &intent.operation_id, Some(&sending), &intent.manifest, &intent.payload, &intent.metadata, &intent.digest).unwrap();
+        let path = library.lock().database(&broken).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        std::fs::write(&path, b"not a database").unwrap();
+        note(&library, "2");
+        assert_eq!(run(&library, "2"), (vec![sending.clone()], vec![broken.clone()]));
+        assert_enrolled_again(&library, &fine, "remote-fine");
+        assert_eq!(file(&library, &sending).pending_upload().unwrap(), Some(intent.clone()), "a request that may have been sent is never dropped");
+        assert_eq!(row(&library, &sending).remote_id.as_deref(), Some("remote-sending"));
+        assert_eq!(noted(&library), json!("2"), "the budgets left are taken up by the next pass");
+        // The delivery settles (here: answered as rejected) and the file is readable again.
+        std::fs::write(&path, bytes).unwrap();
+        let slot = library.lock().pending_delivery(ACCOUNT).unwrap().unwrap();
+        let receipt = json!({"outcome":"rejected","code":"invalidated_generation"});
+        library.lock().record_delivery_receipt(ACCOUNT, &slot.sequence, &slot.digest, &receipt).unwrap();
+        file(&library, &sending).acknowledge_upload(&intent.operation_id, &intent.digest, None, &receipt).unwrap();
+        library.lock().complete_delivery(ACCOUNT, &slot.sequence, &slot.digest).unwrap();
+        assert_eq!(run(&library, "2"), Default::default());
+        for (id, remote) in [(&sending, "remote-sending"), (&broken, "remote-broken")] {
+            assert_enrolled_again(&library, id, remote);
+        }
+        assert_eq!(file(&library, &sending).saved().unwrap().0.name, "Edited");
+        assert_eq!(noted(&library), Value::Null);
+    }
 }
 
 pub fn enroll_created(cloud: &Cloud, library: &Library, id: &str) -> Result<()> {
@@ -2262,6 +2728,10 @@ async fn run_inner(
     let generation = string(&bootstrap, "keyGeneration")?;
     let key = current_key(cloud, &account, &generation, &bootstrap);
     let mut entry_errors = BTreeMap::new();
+    // Before anything reads the catalog: a budget this device is to enroll again must not be
+    // judged first by the identity the reset deleted.
+    let after_reset = reenroll_after_reset(db, library, &account, &generation, &mut entry_errors)?;
+    if !entry_errors.is_empty() { report.state = "attention"; }
     adopt_legacy_bindings(&transport, db, library, &account, &bootstrap).await?;
     reconcile_catalog(&transport, library, &account, &bootstrap, key.as_ref()).await?;
     // Deletion is catalog metadata: it must invalidate editors even while content is locked.
@@ -2362,6 +2832,9 @@ async fn run_inner(
             )
         } else if !enabled && entry.lifecycle == "active" {
             report_entry(&entry, "paused", None)
+        } else if after_reset.contains(&entry.id) {
+            // Left as it is for this pass (`reenroll_after_reset`).
+            report_entry(&entry, if entry.status == "conflict" { "conflict" } else { "queued" }, None)
         } else {
             match process_budget(
                 &transport, db, library, &account, &bootstrap, &key, &entry, open_clean, report,

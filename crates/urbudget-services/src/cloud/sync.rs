@@ -131,6 +131,15 @@ pub struct Status {
     /// Moving needs the passphrase: this device has no saved key that opens the account's key
     /// check. When false, `sync_upgrade` moves it with the key this device already has.
     pub upgrade_needs_passphrase: bool,
+    /// What the account's key is made from, as far as this device last heard: `"code"` for a
+    /// recovery code the app made, `"passphrase"` for one someone chose. `None` when the
+    /// account has no key, or this device hasn't asked yet.
+    pub secret: Option<&'static str>,
+    /// The server holds a recovery copy of the key: a replacement recovery code was made.
+    pub recovery: bool,
+    /// This device holds a recovery code the person hasn't confirmed saving
+    /// (`sync_recovery_unsaved` shows it, `sync_recovery_saved` lets go of it).
+    pub recovery_unsaved: bool,
     pub last: Option<Report>,
 }
 
@@ -399,7 +408,7 @@ impl Engine {
             }
         }
     }
-    fn install_key(&self, key: crypto::Key, generation: u64) -> Result<(), String> {
+    pub(super) fn install_key(&self, key: crypto::Key, generation: u64) -> Result<(), String> {
         self.install_key_with(key, generation, |key| self.set_key(key))
     }
     fn install_key_with(&self, key: crypto::Key, generation: u64, write_key: impl Fn(Option<crypto::Key>) -> Result<(), String>) -> Result<(), String> {
@@ -418,6 +427,9 @@ impl Engine {
             enabled: self.key().is_some(),
             upgrade_available: false,
             upgrade_needs_passphrase: false,
+            secret: None,
+            recovery: false,
+            recovery_unsaved: false,
             last: self.last.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         }
     }
@@ -746,10 +758,133 @@ pub async fn sync_has_key(cloud: &Cloud) -> Result<bool, String> {
     }
 }
 
-/// Unlocks sync on this computer with the passphrase, or sets the passphrase on first use.
-/// Returns whether it was new (then this computer's budgets start syncing).
-pub async fn sync_setup(cloud: &Cloud, library: &Library, passphrase: String) -> Result<Value, String> {
-    if let Some(result)=super::v2::try_setup(cloud,library,&passphrase,false).await? {return Ok(result);}
+/// What the account's sync key is and how this device can get it, for the screen that sets
+/// sync up or unlocks it, asked fresh:
+/// - `exists`: the account has a key (another device set sync up).
+/// - `secret`: what that key is made from, `"code"` (a recovery code) or `"passphrase"`.
+/// - `recovery`: a replacement recovery code was made, so the server holds a recovery copy.
+pub async fn sync_key_info(cloud: &Cloud, library: &Library) -> Result<Value, String> {
+    let probed = {
+        let _one = cloud.sync.operation().await?;
+        super::v2::probe_bootstrap(cloud, library).await.map_err(super::pairing::told)?
+    };
+    if let Some((_, bootstrap)) = probed {
+        return Ok(json!({
+            "exists": bootstrap["keyGeneration"].is_string(),
+            "secret": super::v2::secret_kind(&bootstrap),
+            "recovery": bootstrap["recovery"].is_object(),
+            "protocol": bootstrap["protocol"],
+        }));
+    }
+    let exists = sync_has_key(cloud).await?;
+    Ok(json!({"exists":exists,"secret":exists.then_some("passphrase"),"recovery":false,"protocol":1}))
+}
+
+const WRONG_PASSPHRASE: &str = "That isn't the sync passphrase for this account.";
+fn wrong_passphrase(error: &str) -> bool {
+    error == WRONG_PASSPHRASE || error == t!("That isn't the sync passphrase for this account.")
+}
+
+/// Unlocks sync on this device with the account's `key`, as the right passphrase would:
+/// through protocol 2 where the account goes there, else through protocol 1.
+pub(super) async fn install(cloud: &Cloud, library: &Library, key: crypto::Key) -> Result<Value, String> {
+    if let Some(unlocked) = super::v2::try_unlock(cloud, library, super::v2::Secret::Key(key), false).await? {
+        return Ok(unlocked);
+    }
+    let _one = cloud.sync.operation().await?;
+    let session = cloud.session()?;
+    let found = cloud.call_session(reqwest::Method::GET, "/sync/key", None, Some(&session), None).await?;
+    let check = URL_SAFE_NO_PAD.decode(found["check"].as_str().unwrap_or_default()).map_err(|e| e.to_string())?;
+    if !crypto::matches_check(&key, &check) {
+        return Err(super::v2::key_changed());
+    }
+    cloud.check_session(&session)?;
+    cloud.sync.install_key(key, found["generation"].as_u64().unwrap_or(0))?;
+    Ok(json!({ "created": false }))
+}
+
+/// Unlocks sync on a device that doesn't sync yet, with whatever the person scanned or typed:
+/// a device code another device shows, the recovery code, or the passphrase. Never sets sync
+/// up: an account with no key is told to turn it on. Answers as `sync_setup` does.
+pub async fn sync_unlock(cloud: &Cloud, library: &Library, secret: String) -> Result<Value, String> {
+    use super::codes::{self, Entry};
+    let not_the_code = || t!("That isn't the recovery code for this account. Check it and try again.");
+    let entry = codes::read(&secret)?;
+    let key = match &entry {
+        Entry::Device(code) => Some(super::pairing::accept(cloud, library, code).await?),
+        Entry::Request(_) => return Err(super::pairing::belongs_on_a_syncing_device()),
+        Entry::Recovery(code) => {
+            let probed = {
+                let _one = cloud.sync.operation().await?;
+                super::v2::probe_bootstrap(cloud, library).await.map_err(super::pairing::told)?
+            };
+            match probed {
+                Some((_, bootstrap)) if !bootstrap["keyGeneration"].is_string() => return Err(super::v2::not_set_up()),
+                Some((account, bootstrap)) => {
+                    let code = *code;
+                    let key = tokio::task::spawn_blocking(move || super::recovery::key_from_code(&account, &bootstrap, &code))
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    Some(key.ok_or_else(not_the_code)?)
+                }
+                // Only protocol 1 answers: there the code makes the key as a passphrase does.
+                None => None,
+            }
+        }
+        Entry::Mistyped | Entry::Other => None,
+    };
+    if let Some(key) = key {
+        return install(cloud, library, key).await;
+    }
+    // Only a passphrase could be 24 code characters that aren't a code. Where the account's
+    // key is made from a recovery code there is no passphrase, so it is a typo, said at once.
+    let made_from_code = cloud
+        .selected_account()
+        .and_then(|account| library.lock().account_state(&account).ok())
+        .is_some_and(|state| super::v2::secret_kind(&state["bootstrap"]) == Some("code"));
+    if entry == Entry::Mistyped && made_from_code {
+        return Err(codes::typo());
+    }
+    // Nor is anything else typed there a passphrase. Asked fresh first, because an older app
+    // may since have reset this account with one.
+    if entry == Entry::Other && made_from_code && sync_key_info(cloud, library).await?["secret"] == "code" {
+        return Err(t!("That isn't a code. Enter the 24 characters your other device shows, or your recovery code."));
+    }
+    if !sync_has_key(cloud).await? {
+        return Err(super::v2::not_set_up());
+    }
+    let typed = match &entry {
+        Entry::Recovery(code) => codes::encode(code),
+        _ => secret,
+    };
+    if typed.chars().count() < 8 {
+        return Err(t!("That isn't the sync passphrase for this account."));
+    }
+    sync_setup(cloud, library, Some(typed)).await.map_err(|error| match entry {
+        Entry::Mistyped if wrong_passphrase(&error) => codes::typo(),
+        Entry::Recovery(_) if wrong_passphrase(&error) => not_the_code(),
+        _ => error,
+    })
+}
+
+/// Unlocks sync on this device with the passphrase, or sets sync up on the account's first
+/// device: with that passphrase, or with `None` and a recovery code made here, which the
+/// answer carries as `recoveryCode`. Returns whether it was new (then this device's budgets
+/// start syncing).
+pub async fn sync_setup(cloud: &Cloud, library: &Library, passphrase: Option<String>) -> Result<Value, String> {
+    let passphrase = passphrase.filter(|typed| !typed.is_empty());
+    if let Some(result)=super::v2::try_setup(cloud,library,passphrase.as_deref(),false).await? {return Ok(result);}
+    // Protocol 1 makes the key the same way, so a code made here is its passphrase.
+    let (passphrase, made) = match passphrase {
+        Some(passphrase) => (passphrase, None),
+        None => {
+            if sync_has_key(cloud).await? {
+                return Err(t!("Sync is already set up for this account. Unlock it with a code from a device that syncs, or with your recovery code."));
+            }
+            let code = super::codes::encode(&super::codes::new(super::codes::Kind::Recovery)?);
+            (code.clone(), Some(code))
+        }
+    };
     let _one = cloud.sync.operation().await?;
     if passphrase.chars().count() < 8 {
         return Err(t!("Use a passphrase of at least 8 characters."));
@@ -770,10 +905,10 @@ pub async fn sync_setup(cloud: &Cloud, library: &Library, passphrase: String) ->
             Ok(json!({ "created": false }))
         }
         Err(f) if f.code == "no_key" => {
-            create_key(&cloud, passphrase, false).await?;
+            let check = create_key(&cloud, passphrase, false).await?;
             let ids: Vec<String> = library.lock().list().into_iter().filter(|l| !l.missing).map(|l| l.id).collect();
             track(&cloud, &library, &ids)?;
-            Ok(json!({ "created": true }))
+            made_answer(cloud, true, made, &check)
         }
         Err(f) => Err(f.message),
     }
@@ -785,13 +920,21 @@ pub async fn sync_setup(cloud: &Cloud, library: &Library, passphrase: String) ->
 /// that only speak protocol 1 are told to update before they sync again.
 pub async fn sync_upgrade(cloud: &Cloud, library: &Library, passphrase: Option<String>) -> Result<Value, String> {
     let moved = match passphrase.filter(|p| !p.is_empty()) {
-        Some(passphrase) => super::v2::try_setup(cloud, library, &passphrase, false).await?,
+        // A recovery code makes the key from its text as shown, however it was typed here.
+        Some(passphrase) => {
+            let typed = match super::codes::read(&passphrase) {
+                Ok(super::codes::Entry::Recovery(code)) => super::codes::encode(&code),
+                _ => passphrase,
+            };
+            super::v2::try_setup(cloud, library, Some(&typed), false).await?
+        }
         None => super::v2::try_saved_key(cloud, library).await?,
     };
     moved.ok_or_else(|| t!("The new sync isn't available for this account yet. Try again later."))
 }
 
-async fn create_key(cloud: &Cloud, passphrase: String, reset: bool) -> Result<(), String> {
+/// Returns the new key's check value, as the server now holds it.
+async fn create_key(cloud: &Cloud, passphrase: String, reset: bool) -> Result<String, String> {
     let session = cloud.session()?;
     let expected = if reset {
         let found = cloud.call_session(reqwest::Method::GET, "/sync/key", None, Some(&session), None).await?;
@@ -801,14 +944,26 @@ async fn create_key(cloud: &Cloud, passphrase: String, reset: bool) -> Result<()
     let key = tokio::task::spawn_blocking(move || crypto::derive(&passphrase, &salt))
         .await
         .map_err(|e| e.to_string())??;
+    let check = URL_SAFE_NO_PAD.encode(crypto::key_check(&key)?);
     let body = json!({
         "salt": URL_SAFE_NO_PAD.encode(salt),
-        "check": URL_SAFE_NO_PAD.encode(crypto::key_check(&key)?),
+        "check": check,
         "reset": reset,
     });
     let answer = cloud.call_session(reqwest::Method::PUT, "/sync/key", Some(body), Some(&session), Some(expected)).await?;
     cloud.check_session(&session)?;
-    cloud.sync.install_key(key, answer["generation"].as_u64().unwrap_or(0))
+    cloud.sync.install_key(key, answer["generation"].as_u64().unwrap_or(0))?;
+    Ok(check)
+}
+
+/// The answer to a protocol-1 setup or reset. A recovery code made for it is kept on this
+/// device until the person confirms saving it, as protocol 2 keeps its own.
+fn made_answer(cloud: &Cloud, created: bool, made: Option<String>, check: &str) -> Result<Value, String> {
+    let Some(code) = made else { return Ok(json!({ "created": created })) };
+    if let Some(account) = cloud.selected_account() {
+        super::recovery::keep(cloud, &account, &code, check)?;
+    }
+    Ok(json!({ "created": created, "recoveryCode": code }))
 }
 
 fn track(cloud: &Cloud, library: &Library, ids: &[String]) -> Result<(), String> {
@@ -821,18 +976,39 @@ fn track(cloud: &Cloud, library: &Library, ids: &[String]) -> Result<(), String>
     })
 }
 
-/// A new passphrase: the cloud copies made with the old one are deleted, and this computer's
-/// budgets upload again.
-pub async fn sync_reset(cloud: &Cloud, library: &Library, passphrase: String) -> Result<(), String> {
-    if let Some(_)=super::v2::try_setup(cloud,library,&passphrase,true).await? {return Ok(());}
+/// A new key: the cloud copies made with the old one are deleted, and this device's budgets
+/// upload again. The key is made from `passphrase`, or with `None` from a recovery code made
+/// here, which the answer then carries as `recoveryCode`.
+///
+/// On protocol 2 the upload happens before this answers: the reset is followed by a sync pass,
+/// which gives each budget that was syncing here a new identity under the new key and uploads
+/// it (`v2::reenroll_after_reset`). The reset stands whatever that pass meets. Offline, or with
+/// no subscription, the budgets stay in the library waiting to upload, and the next pass takes
+/// them up.
+pub async fn sync_reset(cloud: &Cloud, db: &Database, library: &Library, passphrase: Option<String>) -> Result<Value, String> {
+    let passphrase = passphrase.filter(|typed| !typed.is_empty());
+    if let Some(reset)=super::v2::try_setup(cloud,library,passphrase.as_deref(),true).await? {
+        // Its answer may carry the new recovery code, so nothing after the reset can fail it.
+        let clean = !db.store().is_ok_and(|s| s.has_unsaved_draft());
+        let _ = sync_now(cloud, db, library, clean).await;
+        return Ok(reset);
+    }
+    let (passphrase, made) = match passphrase {
+        Some(passphrase) => (passphrase, None),
+        None => {
+            let code = super::codes::encode(&super::codes::new(super::codes::Kind::Recovery)?);
+            (code.clone(), Some(code))
+        }
+    };
     let _one = cloud.sync.operation().await?;
     if passphrase.chars().count() < 8 {
         return Err(t!("Use a passphrase of at least 8 characters."));
     }
-    create_key(&cloud, passphrase, true).await?;
+    let check = create_key(&cloud, passphrase, true).await?;
     cloud.sync.set_state(|s| s.budgets.clear())?;
     let ids: Vec<String> = library.lock().list().into_iter().filter(|l| !l.missing).map(|l| l.id).collect();
-    track(&cloud, &library, &ids)
+    track(&cloud, &library, &ids)?;
+    made_answer(cloud, false, made, &check)
 }
 
 /// Starts syncing budgets that are only on this computer.
