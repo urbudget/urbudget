@@ -146,7 +146,9 @@ final class LibraryTrashTests: XCTestCase {
         let kept: JSON = ["id": "e", "lifecycle": "recovery"]
         XCTAssertEqual([open, binned, synced, purged, kept].filter(LibraryTrash.holds).map { $0.text("id") }, ["b", "c", "d"])
         // An account's budget stays until its deletion has synced; one being purged is already going.
-        XCTAssertEqual([open, binned, synced, purged, kept].filter(LibraryTrash.onDeviceOnly).map { $0.text("id") }, ["b"])
+        // A copy kept after a reset or a deletion elsewhere was never in Trash and belongs to no
+        // account, so it can be deleted for good where it is.
+        XCTAssertEqual([open, binned, synced, purged, kept].filter(LibraryTrash.onDeviceOnly).map { $0.text("id") }, ["b", "e"])
     }
 
     /// Through the real library: a budget in Trash is deleted for good, and Trash is emptied.

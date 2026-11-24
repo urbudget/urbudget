@@ -333,10 +333,12 @@ internal fun CloudScreen(vm: BudgetViewModel) {
     if (dialog == "reset") AlertDialog(onDismissRequest = { if (!busy) dialog = "" }, title = { Text(stringResource(R.string.cloud_reset_title)) },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(stringResource(R.string.cloud_reset_message))
-            // The new sync keeps each budget that was syncing as a copy to bring back from the budget library, on every
-            // device, and uploads nothing by itself. The older one uploads this device's budgets again.
-            Text(stringResource(if (syncProtocol(status, keyInfo) == 2) R.string.cloud_reset_keeps_recover else R.string.cloud_reset_keeps_upload))
+            // On the new sync the device that resets uploads the budgets it was syncing by itself, and every other
+            // device receives them and keeps its own copy to recover. The older one uploads every budget on this device.
+            val newSync = syncProtocol(status, keyInfo) == 2
+            Text(stringResource(if (newSync) R.string.cloud_reset_resyncs else R.string.cloud_reset_keeps_upload))
             Text(stringResource(R.string.cloud_reset_devices))
+            if (newSync) Text(stringResource(R.string.cloud_reset_copies))
             // Asked from a device that can't unlock: there may be a way that deletes nothing.
             if (!unlocked) Text(stringResource(R.string.cloud_reset_instead))
             error?.let { FormError(it) }

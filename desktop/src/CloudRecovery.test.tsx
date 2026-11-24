@@ -189,11 +189,14 @@ it("resets sync with nothing to type and shows the new recovery code", async () 
   const model = state();
   render(view(model));
   fireEvent.click(await screen.findByText("Reset sync…"));
-  // On the new sync a reset uploads nothing by itself: each device brings its budgets back.
+  // On the new sync the computer that resets uploads the budgets it was syncing by itself, and
+  // every other device keeps its own copy to recover.
   expect(screen.getByText(/the cloud copies made with the old key are deleted\./)).toBeTruthy();
-  expect(screen.getByText(/bring it back with Recover as a copy in the budget library/)).toBeTruthy();
+  expect(screen.getByText("This computer uploads the budgets it was syncing again, and they keep syncing.")).toBeTruthy();
   expect(screen.getByText(/Your other devices are unlocked with the new recovery code/)).toBeTruthy();
-  expect(screen.queryByText(/upload again/)).toBeNull();
+  expect(screen.getByText(/keeps its own copy in the budget library\. Recover as a copy brings back anything only that device had\./)).toBeTruthy();
+  // Protocol 1's wording, where every budget on this computer uploads, is not shown here.
+  expect(screen.queryByText(/this computer's budgets upload again/)).toBeNull();
   // Said only to someone who can't unlock: this computer already syncs.
   expect(screen.queryByText(/add this computer from it instead/)).toBeNull();
   expect(screen.getByRole("dialog").querySelector("input")).toBeNull();

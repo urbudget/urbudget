@@ -984,9 +984,20 @@ fn track(cloud: &Cloud, library: &Library, ids: &[String]) -> Result<(), String>
 /// A new key: the cloud copies made with the old one are deleted, and this device's budgets
 /// upload again. The key is made from `passphrase`, or with `None` from a recovery code made
 /// here, which the answer then carries as `recoveryCode`.
-pub async fn sync_reset(cloud: &Cloud, library: &Library, passphrase: Option<String>) -> Result<Value, String> {
+///
+/// On protocol 2 the upload happens before this answers: the reset is followed by a sync pass,
+/// which gives each budget that was syncing here a new identity under the new key and uploads
+/// it (`v2::reenroll_after_reset`). The reset stands whatever that pass meets. Offline, or with
+/// no subscription, the budgets stay in the library waiting to upload, and the next pass takes
+/// them up.
+pub async fn sync_reset(cloud: &Cloud, db: &Database, library: &Library, passphrase: Option<String>) -> Result<Value, String> {
     let passphrase = passphrase.filter(|typed| !typed.is_empty());
-    if let Some(reset)=super::v2::try_setup(cloud,library,passphrase.as_deref(),true).await? {return Ok(reset);}
+    if let Some(reset)=super::v2::try_setup(cloud,library,passphrase.as_deref(),true).await? {
+        // Its answer may carry the new recovery code, so nothing after the reset can fail it.
+        let clean = !db.store().is_ok_and(|s| s.has_unsaved_draft());
+        let _ = sync_now(cloud, db, library, clean).await;
+        return Ok(reset);
+    }
     let (passphrase, made) = match passphrase {
         Some(passphrase) => (passphrase, None),
         None => {

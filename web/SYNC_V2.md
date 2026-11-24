@@ -162,6 +162,41 @@ None of what the server holds for this opens a budget: `salt`, `check`, the reco
 pairing message all need a secret the server never sees. The design, the engine's calls and the
 threat table are in `docs/plans/2026-11-24-sync-device-approval.md`.
 
+## After a key reset
+
+`keyReset` deletes every head, moves the account to the next key generation and a new catalog
+epoch, and answers every other installation's pending request with `invalidated_generation`.
+Everything sealed under the old key is gone from the server, so each device's own copies are
+all that is left of the account's budgets.
+
+The installation that asked for the reset puts its budgets back by itself. When its `keyReset`
+receipt is applied, the client notes the generation that reset made (`reenrollAfterReset` in the
+account's saved state). The sync pass that follows, which `sync_reset` runs before it answers,
+enrolls each budget that was syncing on that device again: the file lets go of its binding and
+of any upload prepared for the old identity (`Store::detach_sync`), the catalog gives the budget
+a new id and incarnation (`Budgets::reenroll`), and it uploads as a `create` under the new key
+with its content as it was. This step needs neither the network nor the content key, so offline
+or without a subscription the budgets stay active and upload when they can. A reset whose answer
+was lost ends the same way, whether a retry of `sync_reset` or the next sync completes it,
+because the note is written where the receipt is applied.
+
+Two kinds of budget are left out and kept as copies to recover, as before: one with a conflict
+waiting for review, and one holding a draft that was never saved. The pass that enrolls the
+others leaves these as they are, and the pass after it keeps them as copies. Keeping a budget
+closes it if it is open, and the pass inside `sync_reset` reports to no one, so that is left to a
+pass whose report the app acts on. A budget that isn't downloaded to that device has nothing
+there to upload.
+
+Every other device keeps each budget that was syncing as a copy (`lifecycle == "recovery"`,
+Recover as a copy in the budget library), and once unlocked with the new key it receives the
+resetting device's budgets as new ones. It never enrolls its own copies again. With the heads
+gone, no device can show that its copy is the same budget as another device's, so two devices
+adding theirs back would put each budget in the account twice. If another reset has replaced the
+generation before the pass runs, the note is dropped and that device is one of the others.
+
+Nothing from before a reset is published again: no budget id, no incarnation, and no upload
+prepared for one. An app from before this change keeps its own budgets as copies when it resets.
+
 ## Retention and limits
 
 The initial limits are 50 active budgets, 1 GiB referenced content including
@@ -218,7 +253,10 @@ individual transaction preservation, editor recovery, explicit money conflicts,
 stale choices, restart after lost commit response, save during a paused commit,
 late old-incarnation upload, eviction, deletion/restore, 5000 transactions, and
 empty-library restart. It also tests locked receipt recovery, expired entitlement,
-key reset during upload, offline deletion undo, concurrent restores and deletion
+key reset during upload, a key reset on the device that asked for it (its budgets back in sync
+when `sync_reset` answers, other devices receiving them and keeping their own copies to recover,
+a lost answer completed by a retry and by the next sync, and a budget with a conflict or a draft
+kept as a copy), offline deletion undo, concurrent restores and deletion
 CAS rejection followed by explicit review, private creation, account switching and durable
 rate-limit recovery. It also checks displayed-review replacement by background sync,
 a data folder restored from a backup (new identity, both runs' edits kept), a restore held back
@@ -245,7 +283,8 @@ through a restart until it is confirmed saved; a second device unlocked by a typ
 handed out once, with a typo caught before any request; a new device's own code approved from a
 device that syncs; the recovery code typed on this app and as a passphrase on an older one; a
 replacement code that changes neither the key nor any head; a reset that retires the old code, the
-recovery copy and a waiting approval; a setup whose answer is lost and still ends with its code
+recovery copy and a waiting approval; a device that can't unlock resetting, with its budgets back
+in sync when the reset answers; a setup whose answer is lost and still ends with its code
 shown; an account with a passphrase that keeps it and gains approval and a recovery code; and
 protocol 1, including an approval that moves the account to protocol 2. It does not cover a
 camera, which only a device has.

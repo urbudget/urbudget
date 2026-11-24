@@ -228,4 +228,4 @@ private fun JSONArray.objects() = (0 until length()).mapNotNull(::optJSONObject)
 private fun inTrash(entry: JSONObject) = entry.text("lifecycle") in setOf("trashed", "purged")
 
 /** A budget in Trash that lives only on this phone: it can be deleted permanently. */
-private fun deviceTrash(entry: JSONObject) = entry.text("lifecycle") == "trashed" && entry.text("scope") != "account"
+private fun deviceTrash(entry: JSONObject) = entry.text("lifecycle") in setOf("trashed", "recovery") && entry.text("scope") != "account"

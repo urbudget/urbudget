@@ -370,7 +370,8 @@ extension AppList {
 }
 
 /// A form set as closely as the app's lists (`groupedList`): sections a little apart, the first
-/// just under the bar. Its page and cards are the app's, as `AppList`'s are.
+/// just under the bar, and room after the last so it clears the tabs floating at the foot.
+/// Its page and cards are the app's, as `AppList`'s are.
 struct CompactForm<Content: View>: View {
     @ViewBuilder var content: Content
 
@@ -379,6 +380,7 @@ struct CompactForm<Content: View>: View {
             #if os(iOS)
             .listSectionSpacing(.compact)
             .contentMargins(.top, 8, for: .scrollContent)
+            .contentMargins(.bottom, 20, for: .scrollContent)
             .clearOfSideBar()
             #endif
             .scrollIndicators(.hidden)

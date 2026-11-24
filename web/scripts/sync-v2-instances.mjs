@@ -518,6 +518,133 @@ try {
     await c.call("sync_setup", { passphrase }); await settle(); a.remote = peerRemote;
     assert.equal((await equalBudgets(a.remote)).name, "Peer data after reset");
   });
+  // What the account's server copy holds, asked of the Worker itself: no device takes part.
+  const cloud = async () => {
+    const headers = { Authorization: `Bearer ${local.token}` };
+    const account = await (await fetch(`${local.url}/api/v2/sync/bootstrap`, { headers })).json();
+    const answer = await fetch(`${local.url}/api/v2/sync/catalog/snapshot`, { headers: { ...headers, "X-Sync-Generation": account.keyGeneration, "X-Sync-Epoch": account.catalogEpoch } });
+    assert.equal(answer.status, 200); return { account, heads: (await answer.json()).budgets };
+  };
+  // The budgets a device is syncing and has on it.
+  const syncing = async d => (await snapshot(d)).entries.filter(e => e.lifecycle === "active" && e.accountId === local.accountId && !e.missing);
+  // After `d` reset the key, with nothing more asked of it: each budget it was syncing (`before`,
+  // its library rows from just before) is the same budget, active, under an identity the account
+  // never had, and already on the server under the new key. The server holds nothing else, so no
+  // identity or prepared upload from before the reset was published again.
+  const backInSync = async (d, before) => {
+    const { account, heads } = await cloud(), now = await snapshot(d), last = (await d.call("cloud_status")).sync.last;
+    for (const was of before) {
+      const is = now.entries.find(e => e.id === was.id), head = heads.find(h => h.budgetId === is.remoteId);
+      assert.equal(is.lifecycle, "active", JSON.stringify(is)); assert.equal(is.accountId, local.accountId); assert.equal(is.missing, false);
+      assert.notEqual(is.remoteId, was.remoteId); assert.notEqual(is.incarnation, was.incarnation);
+      assert.equal(is.pending, false, `${is.name} still waits to upload`);
+      assert.equal(last.budgets.find(e => e.id === is.id)?.state, "synced", JSON.stringify(last));
+      assert.ok(head, `${is.name} is not on the server: ${JSON.stringify(heads)}`);
+      assert.deepEqual([head.incarnation, head.version, head.keyGeneration, head.state], [is.incarnation, "1", account.keyGeneration, "active"]);
+    }
+    const old = new Set(before.flatMap(e => [e.remoteId, e.incarnation]));
+    assert.ok(!heads.some(h => old.has(h.budgetId) || old.has(h.incarnation)), "an identity from before the reset was published again");
+    assert.equal(heads.length, before.length, JSON.stringify(heads));
+    return account;
+  };
+  await test("a key reset puts the resetting device's budgets back into sync by itself, and other devices keep their copies", async () => {
+    const made = await a.call("create_budget", { budget: { ...initial(), name: "Kept through a reset" } }); await a.call("library_open", { id: made }); await settle();
+    const shared = (await snapshot(a)).entries.find(e => e.id === made).remoteId, oldB = await open(b, shared), oldC = await open(c, shared);
+    // Saved on the desktop and not uploaded yet, and on the phone an edit the desktop never got.
+    await edit(a, budget => budget.transactions.push(transaction("saved-before-the-reset")));
+    await edit(b, budget => budget.transactions.push(transaction("only-on-the-phone")));
+    const before = await syncing(a), content = (await a.call("load_budget")).budget;
+    assert.ok(before.length >= 2 && before.some(e => e.id === made), JSON.stringify(before));
+    passphrase = "fourth correct horse battery staple"; await a.call("sync_reset", { passphrase });
+    // Nothing more is asked of the desktop: no sync, no Recover as a copy.
+    await backInSync(a, before);
+    assert.equal((await snapshot(a)).activeId, made, "the open budget stays open"); assert.deepEqual((await a.call("load_budget")).budget, content);
+    const fresh = (await snapshot(a)).entries.find(e => e.id === made).remoteId;
+    // The phone is locked by the reset. Unlocked with the new key, it receives the budget as the
+    // desktop has it.
+    await wake(b); assert.equal((await b.call("sync_status")).unlocked, false);
+    await b.call("sync_setup", { passphrase }); await wake(b); await wake(b);
+    for (const was of before) { const arrived = await entry(b, (await snapshot(a)).entries.find(e => e.id === was.id).remoteId); assert.ok(arrived?.lifecycle === "active" && !arrived.missing, `${was.name}: ${JSON.stringify(arrived)}`); }
+    await open(b, fresh); assert.deepEqual((await b.call("load_budget")).budget, content);
+    // Its own copy is kept to recover, with the edit only it had: never merged in, never a second budget in the account.
+    const kept = (await snapshot(b)).entries.find(e => e.id === oldB.id); assert.equal(kept.lifecycle, "recovery"); assert.equal(kept.accountId, null);
+    const copy = await b.call("library_recover", { id: oldB.id }); await b.call("library_open", { id: copy.recoveredId });
+    assert.ok((await b.call("load_budget")).budget.transactions.some(t => t.id === "only-on-the-phone"));
+    assert.equal((await syncing(b)).filter(e => e.name === "Kept through a reset").length, 1);
+    await c.call("sync_setup", { passphrase }); await settle();
+    assert.equal((await snapshot(c)).entries.find(e => e.id === oldC.id).lifecycle, "recovery");
+    assert.ok((await c.call("library_recover", { id: oldC.id })).recoveredId);
+    a.remote = fresh; const everywhere = await equalBudgets(a.remote);
+    assert.ok(everywhere.transactions.some(t => t.id === "saved-before-the-reset")); assert.ok(!everywhere.transactions.some(t => t.id === "only-on-the-phone"));
+    // From here it syncs as any budget does.
+    await edit(b, budget => budget.transactions.push(transaction("after-the-reset"))); await settle();
+    assert.ok((await equalBudgets(a.remote)).transactions.some(t => t.id === "after-the-reset"));
+    // Budgets sync unless someone says otherwise, so the two copies that were recovered by hand
+    // are budgets of their own in the account. Nothing else was added a second time.
+    assert.equal((await cloud()).heads.length, before.length + 2, "only the copies someone recovered were added");
+  });
+  await test("a key reset whose answer was lost ends the same way once it is retried", async () => {
+    const id = (await entry(a, a.remote)).id, oldB = await entry(b, a.remote), before = await syncing(a), content = (await a.call("load_budget")).budget;
+    passphrase = "fifth correct horse battery staple"; a.fault.dropCommit = true;
+    await assert.rejects(a.call("sync_reset", { passphrase }), /OFFLINE/);
+    // The server has the new key and no budgets. The desktop never heard, and is closed.
+    const reset = await cloud(); assert.deepEqual(reset.heads, []);
+    assert.deepEqual((await syncing(a)).map(e => [e.id, e.remoteId]), before.map(e => [e.id, e.remoteId]), "an unanswered reset changed this device's budgets");
+    await a.restart();
+    await a.call("sync_reset", { passphrase });
+    assert.equal((await backInSync(a, before)).keyGeneration, reset.account.keyGeneration, "the retry reset the account a second time");
+    assert.deepEqual((await a.call("load_budget")).budget, content);
+    await b.call("sync_setup", { passphrase }); await wake(b); await wake(b);
+    assert.equal((await snapshot(b)).entries.find(e => e.id === oldB.id).lifecycle, "recovery");
+    await c.call("sync_setup", { passphrase }); await settle();
+    a.remote = (await snapshot(a)).entries.find(e => e.id === id).remoteId; assert.deepEqual(await equalBudgets(a.remote), content);
+  });
+  await test("a key reset whose answer was lost ends the same way when the next sync completes it", async () => {
+    const id = (await entry(a, a.remote)).id, before = await syncing(a), content = (await a.call("load_budget")).budget;
+    passphrase = "sixth correct horse battery staple"; a.fault.dropCommit = true;
+    await assert.rejects(a.call("sync_reset", { passphrase }), /OFFLINE/);
+    // The app is opened again and its scheduler wakes before anyone retries.
+    await a.restart(); const report = await wake(a);
+    assert.equal((await a.call("sync_status")).unlocked, true, JSON.stringify(report));
+    await backInSync(a, before); assert.deepEqual((await a.call("load_budget")).budget, content);
+    for (const d of [b, c]) await d.call("sync_setup", { passphrase }); await settle();
+    a.remote = (await snapshot(a)).entries.find(e => e.id === id).remoteId; assert.deepEqual(await equalBudgets(a.remote), content);
+  });
+  await test("a budget with a conflict to review or an unsaved draft stays a copy to recover on the resetting device too", async () => {
+    const conflicted = await a.call("create_budget", { budget: { ...initial(), name: "Conflict before a reset", assignments: [{ month: "2026-10", categoryId: "food", amount: 1000 }] } });
+    const drafted = await a.call("create_budget", { budget: { ...initial(), name: "Draft before a reset" } }); await settle();
+    const remote = (await snapshot(a)).entries.find(e => e.id === conflicted).remoteId;
+    await a.call("library_open", { id: conflicted }); await open(b, remote);
+    await edit(a, budget => { budget.assignments[0].amount = 2000; }); await edit(b, budget => { budget.assignments[0].amount = 3000; });
+    await wake(b); const asked = await wake(a);
+    assert.ok(asked.budgets.some(e => e.id === conflicted && e.state === "conflict"), JSON.stringify(asked));
+    // A form left half typed in the other budget.
+    await a.call("library_open", { id: drafted }); const values = { amount: "-", payee: "typed before the reset" };
+    await a.call("editor_checkpoint", { budgetId: drafted, id: "qa-reset-draft", epoch: (await a.call("load_budget")).token, target: { kind: "transaction", id: "unsaved" }, baseline: {}, values });
+    // The budget with the conflict is the one on screen.
+    await a.call("library_open", { id: conflicted });
+    const id = (await entry(a, a.remote)).id, before = (await syncing(a)).filter(e => e.id !== conflicted && e.id !== drafted);
+    passphrase = "seventh correct horse battery staple"; await a.call("sync_reset", { passphrase });
+    // Every other budget is back in sync, and these two were not uploaded: the server holds no more than those.
+    await backInSync(a, before);
+    // The reset's own pass leaves them alone, so the open one isn't closed behind the app's back.
+    assert.equal((await snapshot(a)).activeId, conflicted);
+    // The app's next sync keeps them as copies, and says the open budget changed, as it does on any device.
+    const told = await wake(a);
+    assert.equal(told.openChanged, true, JSON.stringify(told)); assert.ok(told.changedBudgets.some(e => e.id === conflicted));
+    for (const kept of [conflicted, drafted]) {
+      const row = (await snapshot(a)).entries.find(e => e.id === kept); assert.equal(row.lifecycle, "recovery", JSON.stringify(row)); assert.equal(row.accountId, null);
+      assert.equal(told.budgets.find(e => e.id === kept)?.state, "recovery");
+    }
+    assert.equal((await snapshot(a)).activeId, null); assert.equal((await cloud()).heads.length, before.length);
+    // Each is recovered by hand, as before, with what was unresolved about it.
+    const mine = await a.call("library_recover", { id: conflicted }); await a.call("library_open", { id: mine.recoveredId });
+    assert.equal((await a.call("load_budget")).budget.assignments[0].amount, 2000);
+    const form = await a.call("library_recover", { id: drafted });
+    assert.deepEqual((await a.call("editor_recovery", { budgetId: form.recoveredId })).find(e => e.editorId === "qa-reset-draft")?.draft, values);
+    for (const d of [b, c]) await d.call("sync_setup", { passphrase }); await settle();
+    a.remote = (await snapshot(a)).entries.find(e => e.id === id).remoteId; await equalBudgets(a.remote);
+  });
   await test("deleting the final active budget stays empty after process restart", async () => {
     await a.call("library_trash", { id: (await entry(a, a.remote)).id }); await wake(a); assert.equal((await a.call("load_budget")).budget, null);
     await a.restart(); assert.equal((await a.call("load_budget")).budget, null); assert.equal((await snapshot(a)).activeId, null);

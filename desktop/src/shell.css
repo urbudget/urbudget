@@ -31,15 +31,8 @@
   padding-block: 12px;
   padding-inline: 8px calc(8px - var(--sidebar-scrollbar));
   overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-}
-/* WebKit before Safari 18.2 (macOS 15.1's) has no scrollbar-gutter: there the bar's track stays
-   in place instead. */
-@supports not (scrollbar-gutter: stable) {
-  .sidebar-scroll {
-    overflow-y: scroll;
-  }
+  /* Always there (see .page-scroll), so the room is kept on a Mac too. */
+  overflow-y: scroll;
 }
 .sidebar-scroll::-webkit-scrollbar {
   width: var(--sidebar-scrollbar);
@@ -470,16 +463,12 @@ nav,
   overflow: auto;
 }
 /* A page that scrolls as a whole keeps the scrollbar's room, as the budget and register do, so
-   moving to a page or tab long enough to scroll doesn't shift everything sideways. */
+   moving to a page or tab long enough to scroll doesn't shift everything sideways. The bar is
+   always there rather than kept room (scrollbar-gutter): WebKit keeps the system bar's width,
+   not this thinner one's, so on a Mac a page narrowed or widened as it began or stopped
+   scrolling. With nothing to scroll, the bar draws nothing. */
 .page-scroll:not(.fill) {
-  scrollbar-gutter: stable;
-}
-/* WebKit before Safari 18.2 (macOS 15.1's) has no scrollbar-gutter: there the bar's track stays
-   instead, empty until there's something to scroll, so the margins still match. */
-@supports not (scrollbar-gutter: stable) {
-  .page-scroll:not(.fill) {
-    overflow-y: scroll;
-  }
+  overflow-y: scroll;
 }
 .page-scroll:not(.fill) > .page {
   padding-inline-end: calc(16px - var(--scrollbar-size));
@@ -594,7 +583,6 @@ nav,
   margin: -12px -6px;
   padding: 12px 0;
   overflow-y: auto;
-  scrollbar-gutter: auto;
 }
 
 /* Resize handle astride the right border, clear of the list's scrollbar */
@@ -895,6 +883,15 @@ nav,
 }
 .titlebar.inactive :is(.titlebar-mark, .titlebar-wordmark) {
   opacity: 0.6;
+}
+/* macOS: the system's traffic lights sit over the bar's left end, 16px in and centred in its
+   36px (tauri.macos.conf.json), so the bar keeps their room on that side whichever way the app
+   reads; right to left, the app's buttons are the ones beside them. Full screen hides them. */
+.titlebar.mac {
+  padding-left: 76px;
+}
+.titlebar.mac.fullscreen {
+  padding-left: 0;
 }
 .loading-titlebar {
   position: fixed;

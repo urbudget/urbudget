@@ -92,10 +92,11 @@ pub async fn sync_upgrade(cloud: State<'_, Cloud>, library: State<'_, Library>, 
     urbudget_services::cloud::sync::sync_upgrade(&cloud, &library, passphrase).await
 }
 
-/// A new key, from a passphrase or, without one, from a recovery code made here.
+/// A new key, from a passphrase or, without one, from a recovery code made here. This
+/// computer's budgets that were syncing upload again under it before this answers.
 #[tauri::command(async)]
-pub async fn sync_reset(cloud: State<'_, Cloud>, library: State<'_, Library>, passphrase: Option<String>) -> Result<Value, String> {
-    urbudget_services::cloud::sync::sync_reset(&cloud, &library, passphrase).await
+pub async fn sync_reset(cloud: State<'_, Cloud>, db: State<'_, Database>, library: State<'_, Library>, passphrase: Option<String>) -> Result<Value, String> {
+    urbudget_services::cloud::sync::sync_reset(&cloud, &db, &library, passphrase).await
 }
 
 #[tauri::command(async)]

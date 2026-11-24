@@ -179,6 +179,64 @@ mod tests {
         assert_eq!(s.sync_binding().unwrap().unwrap().identity, identity());
     }
     #[test]
+    fn detaching_keeps_the_content_and_lets_it_upload_as_a_new_identity_only() {
+        let d = tempfile::tempdir().unwrap();
+        let mut s = Store::open(&d.path().join("b.db")).unwrap();
+        bound(&mut s);
+        // An edit whose upload was prepared for the old identity and never sent.
+        let stale = prepare(&mut s, "Edited before the reset");
+        let (content, status) = s.saved().unwrap();
+        let checkpoint = EditorCheckpoint {
+            editor_id: "editor".into(),
+            epoch: "one".into(),
+            process_owner: "process".into(),
+            target: json!({"kind":"transaction"}),
+            baseline: Value::Null,
+            draft: json!({"amount":"-"}),
+        };
+        s.checkpoint_editor(&checkpoint).unwrap();
+        assert_eq!(s.detach_sync().unwrap(), Some(identity()));
+        assert!(s.sync_binding().unwrap().is_none());
+        assert!(s.pending_upload().unwrap().is_none(), "the old prepared upload must not survive");
+        assert!(s.sync_dirty().unwrap());
+        let (after, now) = s.saved().unwrap();
+        assert_eq!((after, now.revision, now.token.as_str()), (content.clone(), status.revision, status.token.as_str()));
+        assert_eq!(s.editor_checkpoints().unwrap(), [checkpoint]);
+        // Nothing of the old identity can be prepared again: not its request, not an update to it.
+        assert!(s.prepare_upload(&stale, &status.token).is_err());
+        let fresh = RemoteIdentity {
+            key_generation: "2".into(),
+            catalog_epoch: "epoch-two".into(),
+            budget_id: "remote-b".into(),
+            incarnation: "incarnation-two".into(),
+            ..identity()
+        };
+        let mut intent = UploadIntent {
+            operation_id: "operation-two".into(),
+            identity: fresh.clone(),
+            expected_version: "1".into(),
+            manifest: json!({"kind":"update"}),
+            digest: "second-digest".into(),
+            ..stale.clone()
+        };
+        assert!(s.prepare_upload(&intent, &status.token).is_err(), "a new identity starts from nothing");
+        intent.expected_version = "0".into();
+        intent.manifest = json!({"kind":"create"});
+        s.prepare_upload(&intent, &status.token).unwrap();
+        let receipt = json!({"outcome":"accepted","version":"1"});
+        s.acknowledge_upload(&intent.operation_id, &intent.digest, Some("1"), &receipt).unwrap();
+        let binding = s.sync_binding().unwrap().unwrap();
+        assert_eq!((binding.identity, binding.remote_version.as_str(), binding.base), (fresh, "1", content));
+        assert!(!s.sync_dirty().unwrap());
+        // A second detach is as good as the first, and a file with no identity has none to end.
+        s.forget_completed_upload(&intent.operation_id).unwrap();
+        assert!(s.detach_sync().unwrap().is_some());
+        assert_eq!(s.detach_sync().unwrap(), None);
+        // A budget removed from its account is not brought back this way.
+        s.set_sync_blocked(true).unwrap();
+        assert!(s.detach_sync().is_err());
+    }
+    #[test]
     fn delivery_slot_cannot_substitute_bytes_for_the_prepared_budget_intent() {
         let d = tempfile::tempdir().unwrap();
         let mut l = Budgets::load(d.path()).unwrap();
@@ -735,6 +793,29 @@ impl Store {
         )
         .map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())
+    }
+    /// Ends this file's tie to the cloud identity it synced as and keeps everything else, so the
+    /// budget can be enrolled again as a new one. For the device that reset the account key: the
+    /// reset deleted that identity from the server with all that was sealed under the old key,
+    /// so nothing here can be acknowledged against it again.
+    ///
+    /// An upload prepared for the old identity goes with it. The caller holds no delivery for
+    /// this budget, so that request never left this device, and the server would refuse it now.
+    /// The saved budget, its revision, its drafts and its backups stay as they are, and the
+    /// content counts as not uploaded yet. Returns the identity it had, `None` if it had none.
+    pub fn detach_sync(&mut self) -> Result<Option<RemoteIdentity>> {
+        self.check_sync_writable()?;
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|e| e.to_string())?;
+        let previous = read_binding(&tx)?;
+        tx.execute_batch(
+            "DELETE FROM sync_binding_v2; DELETE FROM sync_upload_v2; UPDATE sync_local_state SET dirty=1 WHERE id=1;",
+        )
+        .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(previous.map(|binding| binding.identity))
     }
     pub fn sync_dirty(&self) -> Result<bool> {
         self.connection.query_row("SELECT dirty OR EXISTS(SELECT 1 FROM sync_upload_v2 WHERE state='prepared') FROM sync_local_state WHERE id=1", [], |r| r.get(0)).map_err(|e| e.to_string())

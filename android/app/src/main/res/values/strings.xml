@@ -1406,7 +1406,8 @@
     <string name="cloud_cant_unlock">Can’t unlock?</string>
     <string name="cloud_reset_title">Reset sync?</string>
     <string name="cloud_reset_message">Sync gets a new key and a new recovery code, and the cloud copies made with the old key are deleted.</string>
-    <string name="cloud_reset_keeps_recover">Every device keeps its budgets. A budget that was syncing is brought back from the budget library to sync again.</string>
+    <string name="cloud_reset_resyncs">This device uploads the budgets it was syncing again, and they keep syncing.</string>
+    <string name="cloud_reset_copies">Each of them then receives those budgets and keeps its own copy in the budget library. Recover as a new budget brings back anything only that device had.</string>
     <string name="cloud_reset_keeps_upload">Local budgets stay on your devices and this device uploads its copies again.</string>
     <string name="cloud_reset_devices">Other devices are unlocked with the new recovery code, or added from this one.</string>
     <string name="cloud_reset_instead">If another device of yours still syncs, add this one from it instead. Nothing is deleted that way.</string>

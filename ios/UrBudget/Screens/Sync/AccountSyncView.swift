@@ -540,12 +540,12 @@ struct AccountSyncView: View {
         }
     }
 
-    /// What a reset does, which differs by protocol: on the new sync every device keeps a budget
-    /// that was syncing as a copy to recover from the budget library, and nothing uploads again
-    /// by itself; on protocol 1 this device's budgets upload again.
+    /// What a reset does, which differs by protocol: on the new sync this device uploads the
+    /// budgets it was syncing by itself, and every other device receives them and keeps its own
+    /// copy to recover from the budget library; on protocol 1 every budget here uploads again.
     private var resetMessage: String {
         var parts = [SyncKey.protocolNumber(status, info: keyInfo) == 2
-            ? String(localized: "Sync gets a new key and a new recovery code, and the cloud copies made with the old key are deleted. Every device keeps its budgets. A budget that was syncing is kept as a copy: bring it back with Recover as a new budget in the budget library, and it syncs again. Your other devices are unlocked with the new recovery code, or added from this device.")
+            ? String(localized: "Sync gets a new key and a new recovery code, and the cloud copies made with the old key are deleted. This device uploads the budgets it was syncing again, and they keep syncing. Your other devices are unlocked with the new recovery code, or added from this device. Each of them then receives those budgets and keeps its own copy in the budget library, where Recover as a new budget brings back anything only that device had.")
             : String(localized: "Sync gets a new key and a new recovery code. The cloud copies made with the old key are deleted, and this device's budgets upload again. Your other devices keep their budgets. To sync again, each one is unlocked with the new recovery code or added from this device.")]
         // Asked from a device that can't unlock: there may be a way that deletes nothing.
         if !sync.unlocked {

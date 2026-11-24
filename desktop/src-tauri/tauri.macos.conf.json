@@ -1,0 +1,21 @@
+{
+  "app": {
+    "windows": [
+      {
+        "title": "UrBudget",
+        "width": 1360,
+        "height": 900,
+        "minWidth": 1000,
+        "minHeight": 680,
+        "backgroundColor": "#f5f6f8",
+        "dragDropEnabled": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 20
+        }
+      }
+    ]
+  }
+}

@@ -1579,7 +1579,8 @@
     <string name="cloud_cant_unlock">تعذّر فتح القفل؟</string>
     <string name="cloud_reset_title">إعادة تعيين المزامنة؟</string>
     <string name="cloud_reset_message">تحصل المزامنة على مفتاح جديد ورمز استرداد جديد، وتُحذف النسخ السحابية المنشأة بالمفتاح القديم.</string>
-    <string name="cloud_reset_keeps_recover">يحتفظ كل جهاز بميزانياته. والميزانية التي كانت تُزامَن تُستعاد من مكتبة الميزانيات لتُزامَن من جديد.</string>
+    <string name="cloud_reset_resyncs">يرفع هذا الجهاز من جديد الميزانيات التي كان يزامنها، وتستمر مزامنتها.</string>
+    <string name="cloud_reset_copies">ثم يستقبل كلٌّ منها تلك الميزانيات ويحتفظ بنسخته في مكتبة الميزانيات. تُعيد «استعادة كميزانية جديدة» ما كان على ذلك الجهاز وحده.</string>
     <string name="cloud_reset_keeps_upload">تبقى الميزانيات المحلية على أجهزتك، ويرفع هذا الجهاز نسخه من جديد.</string>
     <string name="cloud_reset_devices">يُفتح قفل الأجهزة الأخرى برمز الاسترداد الجديد، أو تُضاف من هذا الجهاز.</string>
     <string name="cloud_reset_instead">إن كانت المزامنة ما زالت تعمل على جهاز آخر لك، فأضف هذا الجهاز منه بدلًا من ذلك. بهذه الطريقة لا يُحذف شيء.</string>

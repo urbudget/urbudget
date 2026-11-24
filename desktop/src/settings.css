@@ -31,13 +31,17 @@
   flex-direction: column;
   min-width: 0;
 }
+.setting-row > span > strong {
+  color: var(--text);
+  font-weight: 600;
+}
 .setting-row small {
   color: var(--muted);
 }
 .choice-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   margin: 0 0 4px;
   padding: 0;
   border: none;
@@ -51,8 +55,8 @@
 .choice {
   flex-direction: row;
   align-items: flex-start;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: 12px;
+  padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -70,9 +74,21 @@
 .choice span {
   display: flex;
   flex-direction: column;
+  gap: 3px;
 }
 .choice small {
   color: var(--muted);
+  line-height: 1.45;
+}
+/* New budget's template choice: its select and what the template holds, apart from the title. */
+.choice .template-select {
+  gap: 8px;
+  margin-top: 5px;
+}
+.choice .template-preview {
+  gap: 3px;
+  margin: 0;
+  line-height: 1.45;
 }
 .budget-list {
   margin: 0;
@@ -121,10 +137,6 @@
   font-size: 13px;
   font-weight: 400;
   cursor: pointer;
-}
-.setting-row.toggle strong {
-  color: var(--text);
-  font-weight: 500;
 }
 .setting-row select {
   flex: none;
