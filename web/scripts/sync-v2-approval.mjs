@@ -226,6 +226,33 @@ try {
     recoveryCode = reset.recoveryCode;
   });
 
+  await test("a device that can't unlock resets, and its budgets are back in sync when the reset answers", async () => {
+    for (const d of [a, b, c]) { await wake(d); await wake(d); }
+    const rows = async d => (await d.call("library_snapshot")).entries;
+    const before = (await rows(c)).filter(e => e.lifecycle === "active");
+    assert.deepEqual(before.map(e => e.name), ["Made before sync"]);
+    // The third device has the budget and nothing that unlocks sync: "Can't unlock?" resets.
+    await c.call("sync_lock"); assert.equal((await sync(c)).unlocked, false);
+    const reset = await c.call("sync_reset");
+    assert.match(reset.recoveryCode, CODE); assert.equal((await sync(c)).unlocked, true);
+    // Nothing more is asked of it: the budget is the same one, under a new identity, uploaded.
+    const now = (await rows(c)).filter(e => e.lifecycle === "active");
+    assert.deepEqual(now.map(e => [e.id, e.name, e.pending]), before.map(e => [e.id, e.name, false]));
+    assert.ok(now[0].remoteId && now[0].remoteId !== before[0].remoteId && now[0].incarnation !== before[0].incarnation, JSON.stringify(now));
+    assert.ok(!(await rows(c)).some(e => e.id === before[0].id && e.lifecycle === "recovery"));
+    // A device that had it too is locked by the reset. With the new code it receives the budget
+    // from the device that reset, and keeps its own copy to recover.
+    const mine = (await rows(a)).find(e => e.lifecycle === "active");
+    await wake(a); assert.equal((await sync(a)).unlocked, false);
+    assert.deepEqual(await a.call("sync_unlock", { secret: reset.recoveryCode }), { created: false, protocol: 2 });
+    await wake(a); await wake(a);
+    const after = await rows(a), arrived = after.filter(e => e.lifecycle === "active");
+    assert.deepEqual(arrived.map(e => [e.name, e.remoteId, e.missing]), [["Made before sync", now[0].remoteId, false]]);
+    assert.equal(after.find(e => e.id === mine.id).lifecycle, "recovery");
+    assert.ok((await a.call("library_recover", { id: mine.id })).recoveredId);
+    await c.call("sync_recovery_saved"); recoveryCode = reset.recoveryCode;
+  });
+
   await test("a setup whose answer is lost still ends with its recovery code shown", async () => {
     const [, lostEmail] = await account(); const d = await signedIn("interrupted", lostEmail), e = await signedIn("joins-later", lostEmail);
     d.fault.dropCommit = true;
@@ -330,8 +357,9 @@ try {
     const third = await signedIn("current-second", mixedEmail), again = await current.call("sync_pair_offer");
     assert.deepEqual(await third.call("sync_unlock", { secret: again.code }), { created: false, protocol: 2 });
     assert.match((await current.call("sync_recovery_create")).recoveryCode, CODE);
-    // The older app stays unlocked on the key it made. (A reset leaves each device's budgets
-    // as copies to recover, on every version: that is the reset's own behaviour, not this work's.)
+    // The older app stays unlocked on the key it made. (Its engine keeps each of its budgets as a
+    // copy to recover after its own reset: only an app with docs/plans/2026-11-24-sync-device-approval.md
+    // section 12's change enrolls the resetting device's budgets again.)
     const after = await wake(old); assert.notEqual(after.state, "error", JSON.stringify(after)); assert.notEqual(after.state, "locked");
     assert.equal((await old.call("cloud_status")).sync.unlocked, true);
   });

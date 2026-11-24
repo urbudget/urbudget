@@ -1411,7 +1411,7 @@ impl Runtime {
             "sync_pair_wait" => cloud::pairing::wait(&self.cloud, &self.library, &text("code")?).await,
             "sync_pair_approve" => { cloud::pairing::approve(&self.cloud, &self.library, &text("code")?).await?; Ok(Value::Null) }
             "sync_upgrade" => cloud::sync::sync_upgrade(&self.cloud, &self.library, optional(&p, "passphrase")?).await,
-            "sync_reset" => cloud::sync::sync_reset(&self.cloud, &self.library, optional(&p, "passphrase")?).await,
+            "sync_reset" => cloud::sync::sync_reset(&self.cloud, &self.db, &self.library, optional(&p, "passphrase")?).await,
             "sync_track" => { cloud::sync::sync_track(&self.cloud, field(&p, "ids")?).await?; Ok(Value::Null) }
             "sync_download" => value(cloud::sync::sync_download(&self.cloud, &self.library, text("id")?).await?),
             "sync_resolve" => {

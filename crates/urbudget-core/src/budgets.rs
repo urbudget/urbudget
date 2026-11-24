@@ -586,6 +586,41 @@ mod tests {
         assert!(l.contains(&other));
     }
     #[test]
+    fn enrolling_again_keeps_the_budget_and_never_takes_an_identity_the_account_has_used() {
+        let d = tempfile::tempdir().unwrap();
+        let mut l = Budgets::load(d.path()).unwrap();
+        let id = l.observe_catalog(&head("a", "old", "1", "active")).unwrap();
+        std::fs::create_dir_all(l.database(&id).unwrap().parent().unwrap()).unwrap();
+        let mut s = Store::open_budget(&l.database(&id).unwrap(), &id).unwrap();
+        save(&mut s, &sample());
+        l.mark_available(&id).unwrap();
+        l.set_current(&id).unwrap();
+        let version = l.version().unwrap();
+        // The identity it has, and one another budget of the account has, are both refused.
+        assert!(l.reenroll(&id, "a", "remote", "again").is_err());
+        assert!(l.reenroll(&id, "b", "fresh", "again").is_err(), "never into another account");
+        l.reenroll(&id, "a", "fresh", "again").unwrap();
+        let row = l.list_all().into_iter().find(|r| r.id == id).unwrap();
+        assert_eq!(
+            (row.account_id.as_deref(), row.remote_id.as_deref(), row.incarnation.as_deref()),
+            (Some("a"), Some("fresh"), Some("again"))
+        );
+        assert_eq!((row.lifecycle.as_str(), row.availability.as_str()), ("active", "local"));
+        assert_eq!(l.current(), id, "the open budget stays open");
+        assert_ne!(l.version().unwrap(), version);
+        assert_eq!(s.saved().unwrap().0, sample());
+        let hint = l.recovery_hint(&id).unwrap().unwrap();
+        assert_eq!(hint["reenrolledFrom"], json!({"accountId":"a","remoteId":"remote","incarnation":"old"}));
+        // The head it left stays cached, so that identity can't be handed out again here.
+        assert!(l.reenroll(&id, "a", "remote", "third").is_err());
+        // Only an active budget: one in Trash or kept for recovery is left alone.
+        l.set_lifecycle(&id, "trashed").unwrap();
+        assert!(l.reenroll(&id, "a", "another", "third").is_err());
+        l.set_lifecycle(&id, "recovery").unwrap();
+        assert!(l.reenroll(&id, "a", "another", "third").is_err());
+        assert!(l.reenroll("missing", "a", "another", "third").is_err());
+    }
+    #[test]
     fn migration_copies_live_wal_and_recovery_then_fences_both_old_writers() {
         let d = tempfile::tempdir().unwrap();
         let source = d.path().join("budget.sqlite3");
@@ -2235,6 +2270,65 @@ impl Budgets {
         tx.execute(
             "UPDATE local_budgets SET account_id=?2,remote_id=?3,incarnation=?4 WHERE id=?1",
             params![id, account, remote, incarnation],
+        )
+        .map_err(error)?;
+        bump(&tx)?;
+        tx.commit().map_err(error)
+    }
+    /// Gives an active account budget a new cloud identity in the same account, for the device
+    /// that reset the account key: the reset deleted the identity it had from the server. Its
+    /// file has let go of that identity first (`Store::detach_sync`), so the budget uploads
+    /// next as one the account has never seen. `associate` never moves a budget to another
+    /// identity; this is the one place that does, and it notes the identity left behind.
+    pub fn reenroll(
+        &mut self,
+        id: &str,
+        account: &str,
+        remote: &str,
+        incarnation: &str,
+    ) -> Result<()> {
+        if account.is_empty() || remote.is_empty() || incarnation.is_empty() {
+            return Err("Incomplete account binding.".into());
+        }
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(error)?;
+        let row: Option<(Option<String>, Option<String>, Option<String>, String)> = tx
+            .query_row(
+                "SELECT account_id,remote_id,incarnation,lifecycle FROM local_budgets WHERE id=?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()
+            .map_err(error)?;
+        let (owner, prior, prior_incarnation, lifecycle) =
+            row.ok_or_else(|| t!("That budget no longer exists."))?;
+        if owner.as_deref() != Some(account) {
+            return Err("Account transfer requires a new copy.".into());
+        }
+        if lifecycle != "active" {
+            return Err("Only an active budget can be enrolled again.".into());
+        }
+        if tx.query_row("SELECT EXISTS(SELECT 1 FROM local_budgets WHERE account_id=?1 AND remote_id=?2) OR EXISTS(SELECT 1 FROM account_catalog WHERE account_id=?1 AND remote_id=?2)",params![account,remote],|r|r.get::<_,bool>(0)).map_err(error)?{return Err("A new identity must be one this account has never used.".into())}
+        let previous: Option<String> = tx
+            .query_row(
+                "SELECT data FROM sync_hints WHERE local_budget_id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(error)?;
+        let mut hint = previous
+            .map(|raw| serde_json::from_str::<Value>(&raw).map_err(error))
+            .transpose()?
+            .unwrap_or_else(|| json!({}));
+        hint["reenrolledFrom"] =
+            json!({"accountId":account,"remoteId":prior,"incarnation":prior_incarnation});
+        tx.execute("INSERT INTO sync_hints VALUES(?1,?2) ON CONFLICT(local_budget_id) DO UPDATE SET data=excluded.data",params![id,serde_json::to_string(&hint).map_err(error)?]).map_err(error)?;
+        tx.execute(
+            "UPDATE local_budgets SET remote_id=?2,incarnation=?3,status='queued' WHERE id=?1",
+            params![id, remote, incarnation],
         )
         .map_err(error)?;
         bump(&tx)?;

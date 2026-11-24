@@ -206,10 +206,29 @@ migrations 0017 and 0018. Screens: `desktop/src/CloudSettings.tsx`,
   of an account that has one. A reset is under "Can't unlock?".
 - *Where sync is unlocked:* Sync now and Add a device, which closes itself with "Device added".
   New recovery code, Reset sync and Lock are under More.
-- *Reset* says what it does on each protocol. On protocol 2 every device, the one that reset
-  included, keeps each budget that was syncing as a copy to recover from the budget library:
-  that is how protocol 2 already treats a reset. It is the roughest part left, and worth its own
-  look: the device that resets could add its budgets back by itself.
+- *Reset* says what it does on each protocol. On protocol 2 the device that resets uploads the
+  budgets it was syncing again by itself, and every other device receives them and keeps its own
+  copy to recover from the budget library (below).
+
+**A reset on the device that asks for it.** As first built, a protocol-2 reset left every
+device, the one that reset included, with each budget that was syncing as a copy to recover by
+hand, which is how protocol 2 had always treated a reset. The device that resets now puts its
+budgets back by itself. When its reset is accepted the engine notes the key generation it made,
+and the sync pass `sync_reset` runs before it answers gives each budget that was syncing there a
+new identity under the new key and uploads it as it is. The person does nothing, and the budget
+they have open stays open.
+- Only the device that asked. With the server's copies gone, no device can show that its copy is
+  the same budget as another device's, so two devices adding theirs back would make two of each.
+  The others keep today's behaviour, and receive the resetting device's budgets as new ones.
+- Not a budget with a conflict waiting for review, nor one holding a draft that was never saved.
+  Those stay copies to recover on the resetting device too, from its next sync on: the app hears
+  about that sync, so an open budget is never closed without the screen being told.
+- Nothing from before the reset is sent again: the file drops its old identity and any upload
+  prepared for it, and the budget's first request under the new key creates it under new ids.
+- A reset whose answer was lost ends the same way, whether the person retries or the next sync
+  completes it.
+
+The mechanism and its limits are in `web/SYNC_V2.md`, After a key reset.
 
 **Scanning.** iPhone: VisionKit's scanner, with the camera permission. Android: the app's own
 camera screen (CameraX, ZXing reading frames on the phone), with the camera permission asked for
@@ -219,19 +238,26 @@ the privacy policy says the app has no third-party analytics. Either phone falls
 **Tested.**
 - Engine and server unit tests, including fixed vectors for codes and pairing, and the
   server's hand-out-once, limits, expiry and reset rules.
-- `web/scripts/sync-v2-approval.mjs`: ten scenarios through real engine processes and a local
+- `web/scripts/sync-v2-approval.mjs`: eleven scenarios through real engine processes and a local
   Worker (`web/SYNC_V2.md`, Local verification). One of them runs the engine as it was before
   this work (`URBUDGET_OLD_QA`) beside this one: it joins a new account with the recovery code
   in its passphrase box, keeps syncing through a replacement code and an approval, and resets
-  with a passphrase that this engine then unlocks with.
-- The existing suites unchanged: `sync-v2-instances.mjs`, `--legacy`, `sync-v2-protocol.mjs`.
+  with a passphrase that this engine then unlocks with. Another resets from a device that can't
+  unlock and finds its budget back in sync when the reset answers.
+- `sync-v2-instances.mjs`: its scenarios from before, unchanged, and four for the reset. The
+  resetting device's budgets are active, under new identities and on the server when
+  `sync_reset` answers; a second device receives them after unlocking and still recovers its own
+  copy with an edit only it had; a reset whose answer was lost ends the same way after a retry
+  and after the next sync alone; and a budget with a conflict or a draft stays a copy to recover.
+  They fail with the engine's note of the reset taken out.
+- `--legacy` and `sync-v2-protocol.mjs` unchanged.
 - Desktop: type-check and component tests with the engine faked, for every screen above.
 - Android: unit tests (among them ZXing reading a QR code the engine drew), lint, and debug and
   preview builds.
 - iPhone: unit tests on the Simulator, and the translation check.
 
 **Not tested.** No screen was used on a phone, an emulator or the desktop app against a real
-server, and no camera has scanned a code from a screen. Those need a person and two devices:
+server, the reset's new wording included, and no camera has scanned a code from a screen. Those need a person and two devices:
 scanning in poor light and at an angle, the camera permission asked and refused on each phone,
 a computer's code scanned from a phone, and Add a device closing itself.
 

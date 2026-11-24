@@ -864,6 +864,12 @@ async fn deliver_inner(
             };
             state["bootstrap"]["recovery"] = Value::Null;
         }
+        if receipt["kind"] == "keyReset" {
+            // The reset this installation asked for: its budgets go back into sync by
+            // themselves (`reenroll_after_reset`). Written with the new generation, and again
+            // on every replay of this receipt, so it can't be lost between the two.
+            state[REENROLL] = json!(generation);
+        }
         library.set_account_state(account, &state)?;
     }
     if slot.local_budget_id.is_none() {
@@ -1498,6 +1504,336 @@ async fn reconcile_catalog(
     state["cursor"] = json!(cursor);
     state["cursorEpoch"] = bootstrap["catalogEpoch"].clone();
     library.set_account_state(account, &state)
+}
+
+/// In an account's saved state: the key generation a reset asked for on this device made.
+/// While it is the account's generation, the budgets this device synced under an older key are
+/// its to enroll again.
+const REENROLL: &str = "reenrollAfterReset";
+
+/// What a reset does with one budget that synced under the key it replaced.
+#[derive(Debug, PartialEq)]
+enum AfterReset {
+    /// Nothing ties it to an older key: made since, enrolled again already, or never uploaded.
+    Current,
+    /// It has a new identity and uploads on this pass.
+    Enrolled,
+    /// Something of it is unresolved. It becomes a copy to recover by hand, as on every other
+    /// device, on the pass after this one (`process_budget`).
+    Kept,
+    /// A request about it holds this installation's delivery slot. Next pass.
+    Waiting,
+}
+
+/// Puts this device's budgets back into sync after a reset it performed.
+///
+/// A reset deletes every budget from the server with the old key, so each device's copies are
+/// all that's left of them, and no device can tell its copy from another's. A device that only
+/// learns of the reset keeps each copy to recover by hand: two devices adding the same budget
+/// again would make two of it. The device that asked for the reset is one device, so here each
+/// budget that was syncing is given a new identity under the new key and uploads again as it
+/// is, with no one doing anything. The other devices receive it as a new budget beside their
+/// own kept copy.
+///
+/// A budget with a conflict waiting for review, or holding a draft that was never saved, is
+/// left for `process_budget` to keep as a copy, as before: what is unresolved about it was
+/// about the cloud version that is gone. One not downloaded to this device has nothing here to
+/// upload. Nothing of the old identity is sent again: the file lets go of its binding and of
+/// any upload prepared for it (`Store::detach_sync`), and the budget's first request under
+/// the new key is a `create` with ids made here.
+///
+/// It needs neither the network nor the content key. Returns the budgets this pass must not
+/// judge by the identity the reset deleted:
+/// - one left to be kept as a copy. Keeping it closes it if it is open, and the pass that runs
+///   inside `sync_reset` reports to no one, so that waits for the next pass, whose report the
+///   app acts on as it does today;
+/// - one whose own request holds the delivery slot, which is enrolled once that settles.
+///
+/// A budget whose file can't be read now is reported in `errors`, which holds it back the same
+/// way, and is tried again on the next pass.
+fn reenroll_after_reset(
+    db: &Database,
+    library: &Library,
+    account: &str,
+    generation: &str,
+    errors: &mut BTreeMap<String, String>,
+) -> Result<std::collections::BTreeSet<String>> {
+    let mut held = std::collections::BTreeSet::new();
+    let mut unfinished = false;
+    let state = library.lock().account_state(account)?;
+    let Some(made) = state[REENROLL].as_str() else {
+        return Ok(held);
+    };
+    // After a later reset elsewhere this device is one of the others.
+    if made == generation {
+        let in_delivery = library.lock().pending_delivery(account)?.and_then(|slot| slot.local_budget_id);
+        let entries = library.lock().try_list_all()?;
+        for entry in entries.iter().filter(|e| {
+            e.account_id.as_deref() == Some(account) && e.lifecycle == "active" && e.availability == "local" && !e.missing
+        }) {
+            // The head cached for its identity says so too: where an earlier attempt stopped
+            // between the file and the catalog, the file has no binding left to say it.
+            let old_head = match entry.remote_id.as_deref() {
+                Some(remote) => head_for(library, account, remote)?.is_some_and(|head| head.key_generation != generation),
+                None => false,
+            };
+            let decided = library_api::with_store(db, library, &entry.id, |store| {
+                let old = match store.sync_binding()? {
+                    Some(binding) => binding.identity.key_generation != generation,
+                    None => old_head,
+                };
+                if !old {
+                    return Ok(AfterReset::Current);
+                }
+                if entry.status == "conflict"
+                    || store.sync_blocked()?
+                    || store.has_unsaved_draft()
+                    || store.read_recovery()?.is_some()
+                    || !store.editor_checkpoints()?.is_empty()
+                {
+                    return Ok(AfterReset::Kept);
+                }
+                if in_delivery.as_deref() == Some(entry.id.as_str()) {
+                    return Ok(AfterReset::Waiting);
+                }
+                store.detach_sync()?;
+                Ok(AfterReset::Enrolled)
+            })
+            .and_then(|decided| {
+                if decided == AfterReset::Enrolled {
+                    library.lock().reenroll(&entry.id, account, &budgets::new_id(), &budgets::new_id())?;
+                }
+                Ok(decided)
+            });
+            match decided {
+                Ok(AfterReset::Kept) => { held.insert(entry.id.clone()); }
+                Ok(AfterReset::Waiting) => { unfinished = true; held.insert(entry.id.clone()); }
+                Ok(AfterReset::Current | AfterReset::Enrolled) => {}
+                Err(error) => { unfinished = true; errors.insert(entry.id.clone(), error); }
+            }
+        }
+        // Not finished: the note stays, and the next pass takes up the budgets left.
+        if unfinished {
+            return Ok(held);
+        }
+    }
+    let mut catalog = library.lock();
+    let mut state = catalog.account_state(account)?;
+    if let Some(object) = state.as_object_mut() {
+        object.remove(REENROLL);
+    }
+    catalog.set_account_state(account, &state)?;
+    Ok(held)
+}
+
+#[cfg(test)]
+mod reenroll_tests {
+    use super::*;
+    use urbudget_core::test_support::sample;
+
+    const ACCOUNT: &str = "account";
+    fn library(dir: &std::path::Path) -> Library {
+        Library(std::sync::Mutex::new(budgets::Budgets::load(dir).unwrap()))
+    }
+    fn head(remote: &str, generation: &str) -> Head {
+        Head {
+            budget_id: remote.into(), incarnation: format!("{remote}-first"), version: "1".into(), key_generation: generation.into(),
+            state: "active".into(), payload: None, updated_sequence: "1".into(), updated_at: now(), deleted_at: None, retained_until: None,
+            device: "this".into(), legacy: None,
+        }
+    }
+    /// A budget on this device that synced under key generation `generation`: its local id.
+    fn synced(library: &Library, remote: &str, generation: &str) -> String {
+        let scope = json!({"catalogEpoch":"epoch"});
+        let head = head(remote, generation);
+        let id = observe(library, ACCOUNT, &scope, None, &head).unwrap();
+        let path = library.lock().database(&id).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut store = Store::open_budget(&path, &id).unwrap();
+        let token = store.status().unwrap().token;
+        let saved = store.save(&sample(), &token).unwrap();
+        store.bind_sync(&Binding {
+            identity: identity(ACCOUNT, &scope, &head).unwrap(), remote_version: "1".into(),
+            acknowledged_local_revision: saved.revision, base: sample(),
+        }).unwrap();
+        drop(store);
+        library.lock().mark_available(&id).unwrap();
+        id
+    }
+    /// What applying this device's own accepted reset leaves in the account's state.
+    fn note(library: &Library, generation: &str) {
+        let mut catalog = library.lock();
+        let mut state = catalog.ensure_account(ACCOUNT).unwrap();
+        state[REENROLL] = json!(generation);
+        catalog.set_account_state(ACCOUNT, &state).unwrap();
+    }
+    fn noted(library: &Library) -> Value {
+        library.lock().account_state(ACCOUNT).unwrap()[REENROLL].clone()
+    }
+    fn row(library: &Library, id: &str) -> budgets::Listing {
+        library.lock().list_all().into_iter().find(|e| e.id == id).unwrap()
+    }
+    fn file(library: &Library, id: &str) -> Store {
+        Store::open_budget(&library.lock().database(id).unwrap(), id).unwrap()
+    }
+    /// The budgets the pass holds back, and the ones it couldn't read.
+    fn run(library: &Library, generation: &str) -> (Vec<String>, Vec<String>) {
+        let mut errors = BTreeMap::new();
+        let held = reenroll_after_reset(&Database::new(None), library, ACCOUNT, generation, &mut errors).unwrap();
+        (held.into_iter().collect(), errors.into_keys().collect())
+    }
+    /// Enrolled again: the same budget, under ids the account never had, with nothing of the
+    /// old identity left to send and its content waiting to upload.
+    fn assert_enrolled_again(library: &Library, id: &str, remote: &str) {
+        let now = row(library, id);
+        assert_eq!((now.lifecycle.as_str(), now.account_id.as_deref()), ("active", Some(ACCOUNT)));
+        assert_ne!(now.remote_id.as_deref(), Some(remote));
+        assert_ne!(now.incarnation, Some(format!("{remote}-first")));
+        assert_eq!(head_for(library, ACCOUNT, now.remote_id.as_deref().unwrap()).unwrap(), None);
+        let store = file(library, id);
+        assert!(store.sync_binding().unwrap().is_none() && store.pending_upload().unwrap().is_none());
+        assert!(store.sync_dirty().unwrap());
+    }
+    fn assert_untouched(library: &Library, id: &str, remote: &str, generation: &str) {
+        let now = row(library, id);
+        assert_eq!((now.lifecycle.as_str(), now.remote_id.as_deref()), ("active", Some(remote)));
+        assert_eq!(file(library, id).sync_binding().unwrap().unwrap().identity.key_generation, generation);
+    }
+
+    #[test]
+    fn the_device_that_reset_enrolls_what_it_was_syncing_and_nothing_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = library(dir.path());
+        let old = synced(&library, "remote-old", "1");
+        let current = synced(&library, "remote-current", "2");
+        let private = library.lock().create().unwrap();
+        // Enrolled and never uploaded: it has no identity the server ever knew.
+        let unsent = library.lock().create().unwrap();
+        {
+            let mut store = file(&library, &unsent);
+            let token = store.status().unwrap().token;
+            store.save(&sample(), &token).unwrap();
+        }
+        library.lock().mark_available(&unsent).unwrap();
+        library.lock().associate(&unsent, ACCOUNT, "remote-unsent", "unsent-first").unwrap();
+        let revision = file(&library, &old).status().unwrap().revision;
+        // A device that only hears of a reset does nothing here: `process_budget` keeps its copies.
+        assert_eq!(run(&library, "2"), Default::default());
+        assert_untouched(&library, &old, "remote-old", "1");
+        note(&library, "2");
+        assert_eq!(run(&library, "2"), Default::default());
+        assert_enrolled_again(&library, &old, "remote-old");
+        let (content, status) = file(&library, &old).saved().unwrap();
+        assert_eq!((content, status.revision), (sample(), revision), "its content is exactly as it was");
+        assert_untouched(&library, &current, "remote-current", "2");
+        assert_eq!(row(&library, &private).account_id, None);
+        assert_eq!(row(&library, &unsent).remote_id.as_deref(), Some("remote-unsent"));
+        assert_eq!(noted(&library), Value::Null, "done once");
+        assert_eq!(library.lock().recovery_hint(&old).unwrap().unwrap()["reenrolledFrom"]["remoteId"], "remote-old");
+    }
+
+    #[test]
+    fn after_a_later_reset_elsewhere_this_device_is_one_of_the_others() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = library(dir.path());
+        let id = synced(&library, "remote", "1");
+        note(&library, "2");
+        assert_eq!(run(&library, "3"), Default::default());
+        assert_untouched(&library, &id, "remote", "1");
+        assert_eq!(noted(&library), Value::Null);
+    }
+
+    #[test]
+    fn an_attempt_that_stopped_between_the_file_and_the_catalog_is_finished() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = library(dir.path());
+        let id = synced(&library, "remote", "1");
+        note(&library, "2");
+        // The file let go of its identity, and the process died before the catalog heard.
+        file(&library, &id).detach_sync().unwrap();
+        assert_eq!(row(&library, &id).remote_id.as_deref(), Some("remote"));
+        assert_eq!(run(&library, "2"), Default::default());
+        assert_enrolled_again(&library, &id, "remote");
+        assert_eq!(noted(&library), Value::Null);
+    }
+
+    #[test]
+    fn an_unresolved_budget_is_left_to_be_kept_as_a_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = library(dir.path());
+        let conflict = synced(&library, "remote-conflict", "1");
+        library.lock().set_entry_status(&conflict, "conflict").unwrap();
+        let draft = synced(&library, "remote-draft", "1");
+        file(&library, &draft).checkpoint_editor(&urbudget_core::sync_storage::EditorCheckpoint {
+            editor_id: "editor".into(), epoch: "one".into(), process_owner: "an earlier run".into(),
+            target: json!({"kind":"transaction"}), baseline: Value::Null, draft: json!({"amount":"-"}),
+        }).unwrap();
+        let removed = synced(&library, "remote-removed", "1");
+        file(&library, &removed).set_sync_blocked(true).unwrap();
+        let trashed = synced(&library, "remote-trashed", "1");
+        library.lock().set_lifecycle(&trashed, "trashed").unwrap();
+        note(&library, "2");
+        // Held back from this pass, so the pass that keeps them as copies is one the app hears from.
+        let mut unresolved = vec![conflict.clone(), draft.clone(), removed.clone()];
+        unresolved.sort();
+        assert_eq!(run(&library, "2"), (unresolved, vec![]));
+        for (id, remote) in [(&conflict, "remote-conflict"), (&draft, "remote-draft"), (&removed, "remote-removed")] {
+            assert_untouched(&library, id, remote, "1");
+        }
+        assert_eq!(row(&library, &trashed).remote_id.as_deref(), Some("remote-trashed"));
+        // Decided at the reset: the next pass holds nothing back, and saving the draft later
+        // doesn't put the budget back by itself.
+        assert_eq!(noted(&library), Value::Null);
+        assert_eq!(run(&library, "2"), Default::default());
+        assert_untouched(&library, &draft, "remote-draft", "1");
+    }
+
+    #[test]
+    fn a_budget_whose_request_is_in_flight_or_whose_file_cant_be_read_waits_for_the_next_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = library(dir.path());
+        let sending = synced(&library, "remote-sending", "1");
+        let broken = synced(&library, "remote-broken", "1");
+        let fine = synced(&library, "remote-fine", "1");
+        // An upload for one of them holds the installation's delivery slot, its outcome unknown.
+        let intent = {
+            let mut store = file(&library, &sending);
+            let (mut edited, _) = store.saved().unwrap();
+            edited.name = "Edited".into();
+            let token = store.status().unwrap().token;
+            let status = store.save(&edited, &token).unwrap();
+            let binding = store.sync_binding().unwrap().unwrap();
+            let intent = UploadIntent {
+                operation_id: "operation".into(), identity: binding.identity, expected_version: "1".into(), local_revision: status.revision,
+                candidate: store.saved().unwrap().0, manifest: json!({"kind":"update"}), payload: vec![1, 2, 3], metadata: "meta".into(), digest: "digest".into(),
+            };
+            store.prepare_upload(&intent, &status.token).unwrap();
+            intent
+        };
+        library.lock().prepare_delivery(ACCOUNT, &intent.operation_id, Some(&sending), &intent.manifest, &intent.payload, &intent.metadata, &intent.digest).unwrap();
+        let path = library.lock().database(&broken).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        std::fs::write(&path, b"not a database").unwrap();
+        note(&library, "2");
+        assert_eq!(run(&library, "2"), (vec![sending.clone()], vec![broken.clone()]));
+        assert_enrolled_again(&library, &fine, "remote-fine");
+        assert_eq!(file(&library, &sending).pending_upload().unwrap(), Some(intent.clone()), "a request that may have been sent is never dropped");
+        assert_eq!(row(&library, &sending).remote_id.as_deref(), Some("remote-sending"));
+        assert_eq!(noted(&library), json!("2"), "the budgets left are taken up by the next pass");
+        // The delivery settles (here: answered as rejected) and the file is readable again.
+        std::fs::write(&path, bytes).unwrap();
+        let slot = library.lock().pending_delivery(ACCOUNT).unwrap().unwrap();
+        let receipt = json!({"outcome":"rejected","code":"invalidated_generation"});
+        library.lock().record_delivery_receipt(ACCOUNT, &slot.sequence, &slot.digest, &receipt).unwrap();
+        file(&library, &sending).acknowledge_upload(&intent.operation_id, &intent.digest, None, &receipt).unwrap();
+        library.lock().complete_delivery(ACCOUNT, &slot.sequence, &slot.digest).unwrap();
+        assert_eq!(run(&library, "2"), Default::default());
+        for (id, remote) in [(&sending, "remote-sending"), (&broken, "remote-broken")] {
+            assert_enrolled_again(&library, id, remote);
+        }
+        assert_eq!(file(&library, &sending).saved().unwrap().0.name, "Edited");
+        assert_eq!(noted(&library), Value::Null);
+    }
 }
 
 pub fn enroll_created(cloud: &Cloud, library: &Library, id: &str) -> Result<()> {
@@ -2392,6 +2728,10 @@ async fn run_inner(
     let generation = string(&bootstrap, "keyGeneration")?;
     let key = current_key(cloud, &account, &generation, &bootstrap);
     let mut entry_errors = BTreeMap::new();
+    // Before anything reads the catalog: a budget this device is to enroll again must not be
+    // judged first by the identity the reset deleted.
+    let after_reset = reenroll_after_reset(db, library, &account, &generation, &mut entry_errors)?;
+    if !entry_errors.is_empty() { report.state = "attention"; }
     adopt_legacy_bindings(&transport, db, library, &account, &bootstrap).await?;
     reconcile_catalog(&transport, library, &account, &bootstrap, key.as_ref()).await?;
     // Deletion is catalog metadata: it must invalidate editors even while content is locked.
@@ -2492,6 +2832,9 @@ async fn run_inner(
             )
         } else if !enabled && entry.lifecycle == "active" {
             report_entry(&entry, "paused", None)
+        } else if after_reset.contains(&entry.id) {
+            // Left as it is for this pass (`reenroll_after_reset`).
+            report_entry(&entry, if entry.status == "conflict" { "conflict" } else { "queued" }, None)
         } else {
             match process_budget(
                 &transport, db, library, &account, &bootstrap, &key, &entry, open_clean, report,

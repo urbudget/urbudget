@@ -708,8 +708,9 @@ export function SyncSettings({
           {state.status?.sync.protocol === 2 ? (
             <>
               <p>{t("Sync gets a new key and a new recovery code, and the cloud copies made with the old key are deleted.")}</p>
-              <p>{t("Every device keeps its budgets. A budget that was syncing is kept as a copy: bring it back with Recover as a copy in the budget library, and it syncs again.")}</p>
+              <p>{t("This computer uploads the budgets it was syncing again, and they keep syncing.")}</p>
               <p>{t("Your other devices are unlocked with the new recovery code, or added from this computer.")}</p>
+              <p>{t("Each of them then receives those budgets and keeps its own copy in the budget library. Recover as a copy brings back anything only that device had.")}</p>
             </>
           ) : (
             <>
