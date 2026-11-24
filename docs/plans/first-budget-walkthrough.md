@@ -236,6 +236,9 @@ another device, or an empty one left before step 4 got no help.
   hidden.
 - **The walkthrough marks an existing budget when it opens**, so leaving at any step keeps
   the card. Opening it again brings back a card that was hidden.
+- **Step 2 on an existing budget trims it too.** A category nothing uses yet (no spending or
+  schedule in it, no money assigned) can be left out, as a template's can on a first launch;
+  one in use stays. So a template chosen in New budget is trimmed in the same place.
 - **Only the missing choice of how to keep it up to date doesn't count**: a budget that is
   otherwise complete isn't asked step 5 alone on a device that never saw its setup.
 - The mark stays on the device. Each device decides for itself from the budget's state.
