@@ -140,15 +140,14 @@ extension View {
         #endif
     }
 
-    /// A page's title large and on the bar's own row, beside its buttons, as Android's top bar
-    /// has it: the row a large title takes under the bar goes to the page.
+    /// A tab's title, large at the start of the bar's own row beside its buttons, as Android's top
+    /// bar has it: the row a large title takes under the bar goes to the page. It stays as it is
+    /// while the page scrolls, the bar only turning to glass, as the budget's month does and as
+    /// every other page's small title does. (iOS's own large title on the bar's row shrinks as the
+    /// page moves, then stays at the start or centres itself by how many buttons there are.)
     /// A page reached from another keeps the bar's small title, beside its back button.
-    func barTitle(_ large: Bool = true) -> some View {
-        #if os(iOS)
-        toolbarTitleDisplayMode(large ? .inlineLarge : .inline)
-        #else
-        self
-        #endif
+    func barTitle(_ title: Text, large: Bool = true) -> some View {
+        modifier(BarTitle(title: title, large: large))
     }
 
     /// Rows as close together as Android's: about 56 points for a name over a line of detail.
@@ -289,6 +288,38 @@ extension View {
 
     /// For every tab's screen: no system tab bar where the app's dock stands in for it.
     func tabBarOffFold() -> some View { modifier(TabBarOffFold()) }
+}
+
+/// `barTitle`: the bar's small title, or in its place the tab's large one at the start of the row.
+/// Both ways the page is the same view with the same modifiers, so a register switching to a
+/// selection's small title keeps its place in the list.
+private struct BarTitle: ViewModifier {
+    var title: Text
+    var large: Bool
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content
+            // The title stays the page's, for VoiceOver and the back button's list, where the large one stands in for it on the bar.
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if large {
+                    // In the middle of the bar, asking for more width than it has so the bar gives it all
+                    // the room the buttons leave (sized to its words, it would be centred): from the start
+                    // of the row up to them, a size smaller before it's cut short, as Android's.
+                    ToolbarItem(placement: .principal) {
+                        title.font(.largeTitle.bold()).foregroundStyle(Color.primary)
+                            .lineLimit(1).minimumScaleFactor(0.6)
+                            .frame(minWidth: 0, idealWidth: 4000, maxWidth: .infinity, alignment: .leading)
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                }
+            }
+        #else
+        content.navigationTitle(title)
+        #endif
+    }
 }
 
 private struct TabBarOffFold: ViewModifier {

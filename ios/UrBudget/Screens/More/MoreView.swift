@@ -66,8 +66,7 @@ struct MoreView: View {
             }
             .groupedList()
             .startPaneContent()
-            .navigationTitle("More")
-            .barTitle()
+            .barTitle(Text("More"))
             .navigationDestination(for: MoreRoute.self) { route in
                 Group {
                     switch route {

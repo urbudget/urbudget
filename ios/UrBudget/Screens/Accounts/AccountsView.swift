@@ -138,8 +138,7 @@ struct AccountsView: View {
                 store.foreground(force: true)
                 await sync.syncAutomatically()
             }
-            .navigationTitle("Accounts")
-            .barTitle()
+            .barTitle(Text("Accounts"))
             .toolbar {
                 ToolbarItem(placement: .trailingBar) {
                     Button { form = AccountFormRequest() } label: { Image(systemName: "plus") }.accessibilityLabel("Add account")

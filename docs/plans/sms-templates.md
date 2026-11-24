@@ -349,6 +349,18 @@ give the payee. The assistant's own reading never overrides 1–3 (`own_names` r
 and its learning never replaces a name the user chose. Renaming one row in the review renames the
 rows still showing that bank's name (`smsSameName`).
 
+**Same name in one review** (as of 2026-11-23). Changing a row's payee or category in its editor
+copies the change to the review's other rows of that bank's name, with three limits:
+
+- What the user set on a row in its editor is theirs (`SmsBatch.mine`, kept with the draft):
+  another row's change never overwrites it. Before this, setting a pharmacy row to health copied
+  health to its twin, and then setting the twin to food copied food back over the first.
+- Copying is said, with Undo for the copied rows alone ("Also changed 2 more transactions from
+  Nahdi"), in a snackbar over the review's own bar.
+- Once the user has set a field two ways on rows of one name, nothing more is copied for it: the
+  rows they didn't set get its "Check" chip instead ("1 more transaction from Nahdi is marked to
+  check"), as a payee filed under several categories does for the next texts (`Names::of`).
+
 **States**
 
 | State | Review lane | Junk lane (skip templates) | Enters when |
