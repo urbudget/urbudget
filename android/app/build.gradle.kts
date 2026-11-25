@@ -28,8 +28,8 @@ android {
         minSdk = 26
         targetSdk = 37
         // Preserve Tauri Android's million-based version scheme for in-place upgrades.
-        versionCode = providers.gradleProperty("versionCode").orElse("1000004").get().toInt()
-        versionName = "1.0.4"
+        versionCode = providers.gradleProperty("versionCode").orElse("1000005").get().toInt()
+        versionName = "1.0.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += requestedAbis }
         // Whether the engine is a debug build, which talks to URBUDGET_API's local server instead of
