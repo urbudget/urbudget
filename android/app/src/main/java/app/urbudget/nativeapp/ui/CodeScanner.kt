@@ -91,7 +91,10 @@ private fun CameraFrames(found: (String) -> Unit, unavailable: () -> Unit) {
                     if (code != null && answered.compareAndSet(false, true)) main.execute { latestFound(code) }
                 }
                 provider.unbindAll()
-                provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                // A Chromebook or tablet may have only the camera facing the person: the code is
+                // held up to that one instead.
+                val camera = if (provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) CameraSelector.DEFAULT_BACK_CAMERA else CameraSelector.DEFAULT_FRONT_CAMERA
+                provider.bindToLifecycle(owner, camera, preview, analysis)
                 bound = provider
             } catch (_: Exception) {
                 if (answered.compareAndSet(false, true)) latestUnavailable()

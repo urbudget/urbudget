@@ -16,6 +16,9 @@
     <!-- Only to scan the one-time code that adds a device to sync, asked for when someone taps Scan
          (ui/CodeScanner.kt). Frames are read on the phone and kept nowhere. A code can always be typed. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- The camera permission alone makes Play require a back camera, which left 374 tablets,
+         Chromebooks and cars out of 1.0.4. Declared here so none is required. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <application
         android:allowBackup="false"
