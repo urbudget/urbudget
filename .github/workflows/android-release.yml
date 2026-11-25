@@ -64,7 +64,10 @@ jobs:
       - name: Install Android toolchain
         run: |
           sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "ndk;30.0.16248370"
+          # Both names: the build reads ANDROID_NDK_HOME first, and the runner sets it to its own older
+          # NDK, which links the Rust engine with 4 KB pages (Play needs 16 KB).
           echo "NDK_HOME=$ANDROID_HOME/ndk/30.0.16248370" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/30.0.16248370" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,x86_64-linux-android

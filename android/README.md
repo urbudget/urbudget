@@ -570,7 +570,9 @@ read grants. No broad storage permission is requested.
 ## Build and tests
 
 Use JDK 17+, Android SDK 37, NDK `30.0.16248370`, and Rust stable. Set `JAVA_HOME`,
-`ANDROID_HOME`, `NDK_HOME` and put Cargo on `PATH`.
+`ANDROID_HOME`, `NDK_HOME` and put Cargo on `PATH`. `ANDROID_NDK_HOME` wins over `NDK_HOME` when
+both are set. The build stops if the Rust engine isn't linked for 16 KB pages, which Google Play
+needs and NDK 28 and later do by default.
 
 ```powershell
 rustup target add aarch64-linux-android x86_64-linux-android

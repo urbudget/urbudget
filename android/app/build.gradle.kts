@@ -1,3 +1,5 @@
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -97,6 +99,7 @@ val buildRust = tasks.register("buildRustEngine") {
     inputs.files(fileTree(repositoryRoot.resolve("crates")) { include("**/*.rs", "**/Cargo.toml", "**/Cargo.lock") })
     inputs.property("androidAbis", requestedAbis)
     inputs.property("rustDebug", rustDebug)
+    inputs.property("ndk", ndkHome ?: "")
     outputs.dir(nativeOutputs)
     doLast {
         val ndk = ndkHome ?: throw GradleException("Set ANDROID_NDK_HOME or NDK_HOME to an installed Android NDK.")
@@ -118,12 +121,30 @@ val buildRust = tasks.register("buildRustEngine") {
             }.start()
             process.inputStream.bufferedReader().useLines { lines -> lines.forEach { logger.lifecycle(it) } }
             check(process.waitFor() == 0) { "Rust compilation failed for $abi. Install the Rust target with rustup target add $target." }
+            val built = rustTarget.get().file("$target/${if (rustDebug) "debug" else "release"}/liburbudget_android.so").asFile
+            // Google Play takes only libraries whose segments load on 16 KB pages. NDK 28 and later
+            // link that way; an older one (a CI runner's own, named by ANDROID_NDK_HOME) uses 4 KB.
+            val pages = loadAlignments(built)
+            check(pages.isNotEmpty() && pages.all { it >= 0x4000 }) {
+                "$abi: liburbudget_android.so loads on ${pages.minOrNull()}-byte pages, not 16 KB. Build with NDK 28 or later " +
+                    "(this one is $ndk), and delete ${rustTarget.get().asFile} if Cargo kept an older link."
+            }
             copy {
-                from(rustTarget.get().file("$target/${if (rustDebug) "debug" else "release"}/liburbudget_android.so"))
+                from(built)
                 into(nativeOutputs.get().dir(abi))
             }
         }
     }
+}
+/** The alignment of each loadable segment of a 64-bit little-endian ELF file (every Android ABI built here). */
+fun loadAlignments(library: File): List<Long> {
+    val elf = ByteBuffer.wrap(library.readBytes()).order(ByteOrder.LITTLE_ENDIAN)
+    check(elf.getInt(0) == 0x464c457f && elf.get(4).toInt() == 2 && elf.get(5).toInt() == 1) { "$library is not a 64-bit little-endian ELF file." }
+    val start = elf.getLong(0x20).toInt()
+    val size = elf.getShort(0x36).toInt()
+    return (0 until elf.getShort(0x38).toInt()).map { start + it * size }
+        .filter { elf.getInt(it) == 1 } // PT_LOAD
+        .map { elf.getLong(it + 0x30) } // p_align
 }
 tasks.named("preBuild").configure { dependsOn(buildRust) }
 
