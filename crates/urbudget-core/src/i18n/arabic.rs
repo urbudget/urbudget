@@ -1385,7 +1385,6 @@ pub(super) const MESSAGES: &[(&str, &str)] = &[
     // The setup walkthrough's budget (setup.rs): the group for categories someone adds to a template.
     ("Other", "أخرى"),
     // The desktop app's own commands and its Microsoft Store updates (desktop/src-tauri).
-    ("Choose a downloaded YNAB export.", "اختر ملف تصدير YNAB الذي نزّلته."),
     ("Choose a plain .csv file name.", "اختر اسمًا بسيطًا لملف CSV."),
     ("Only files in the app's data folder, or ones it just saved, can be shown.", "لا يمكن عرض إلا الملفات الموجودة في مجلد بيانات التطبيق، أو التي حفظها للتو."),
     ("Couldn't make the folder {folder}: {e}", "تعذّر إنشاء المجلد {folder}: {e}"),
