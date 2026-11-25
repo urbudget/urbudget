@@ -73,14 +73,6 @@ async function discardObject(env: AppEnv["Bindings"], key: string) {
   if (queued) await cleanObjects(env, [key]);
 }
 
-/** Delete database references first; never erase an object still referenced by a budget. */
-export async function deleteSyncedBudgets(env: AppEnv["Bindings"], userId: string) {
-  const rows = await env.DB.prepare("DELETE FROM sync_budgets WHERE user_id = ?1 RETURNING object_key")
-    .bind(userId)
-    .all<{ object_key: string }>();
-  await cleanObjects(env, rows.results.map((row) => row.object_key));
-}
-
 async function assertGeneration(c: Context<AppEnv>, expected: number) {
   const key = await c.env.DB.prepare("SELECT generation FROM sync_keys WHERE user_id = ?1")
     .bind(c.get("user").id).first<{ generation: number }>();

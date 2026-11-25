@@ -28,3 +28,6 @@ recovery.json
 # Retained local source media and dated submission captures (current exports are tracked).
 /marketing/video/
 /marketing/screenshots/1.0.4/
+
+# Python bytecode from the test and automation scripts.
+__pycache__/

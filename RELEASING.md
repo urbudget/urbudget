@@ -38,7 +38,8 @@ Actions tab on `main` with the version already in the source.
 - **Desktop:** write the release's notes from [CHANGELOG.md](desktop/CHANGELOG.md) into the draft
   before publishing; they show on the download page and in the app's update notice. Desktop
   releases up to 1.0.7 are tagged `v1.0.7` and so on; those tags stay as they are.
-  The Release workflow gates installer builds on updater regression tests. For updater changes,
+  The Release workflow runs no tests: tag a commit whose App validation run on `main` passed (it
+  runs the updater and save tests on Windows). For updater changes,
   complete the [two-version Store flight and standalone upgrade checks](desktop/README.md#verifying-an-updater-change)
   before publishing the draft: publication submits the Store package for certification as well as
   offering standalone updates. Record the tested package versions, artifact hashes, and results

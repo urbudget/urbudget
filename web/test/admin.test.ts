@@ -169,23 +169,6 @@ describe("admin access", () => {
   });
 });
 
-describe("admin without licenses", () => {
-  it("has no license tools or license numbers", async () => {
-    for (const path of ["/api/v1/admin/licenses", "/api/v1/admin/licenses/lic_1"]) expect((await call(path)).status, path).toBe(404);
-    for (const path of ["/api/v1/admin/licenses", "/api/v1/admin/licenses/lic_1/revoke", "/api/v1/admin/licenses/lic_1/reissue", "/api/v1/admin/licenses/lic_1/resend"])
-      expect((await call(path, post({ email: "a@example.com" }))).status, path).toBe(404);
-    const overview = await read(call("/api/v1/admin/overview"));
-    expect(overview).not.toHaveProperty("licenses");
-    expect(Object.keys(overview.funnel as object)).toEqual(["views", "downloads", "opens", "checkouts"]);
-    const revenue = await read(call("/api/v1/admin/revenue"));
-    expect(revenue).not.toHaveProperty("refundedLicenses");
-    const asked = new URL(fetches.find((f) => f.url.includes("/v1/metrics/"))!.url);
-    expect(asked.searchParams.getAll("metrics").some((m) => m.startsWith("one_time_products"))).toBe(false);
-    const health = await read<{ settings: { name: string }[] }>(call("/api/v1/admin/health"));
-    expect(health.settings.map((s) => s.name)).not.toContain("LICENSE_PRIVATE_KEY");
-  });
-});
-
 describe("admin numbers", () => {
   async function publish() {
     await env.RELEASES.put(
@@ -605,9 +588,8 @@ describe("admin accounts", () => {
     expect(await emails("filter=app")).toEqual(["ana@example.com"]);
     expect(await emails("filter=nothing")).toEqual(["ben@example.com"]);
     expect((await list("q=100%25")).total).toBe(0);
-    // A name an object inherits isn't a filter, and neither is the old license one.
+    // A name an object inherits isn't a filter.
     expect((await list("filter=constructor")).total).toBe(2);
-    expect((await list("filter=licensed")).total).toBe(2);
 
     const detail = await read<{
       account: { email: string; customerId: string };
@@ -616,7 +598,6 @@ describe("admin accounts", () => {
       budgets: { id: string; revision: number; size: number; device: string }[];
     }>(call(`/api/v1/admin/accounts/${ana.userId}`));
     expect(detail.account).toMatchObject({ email: "ana@example.com", customerId: "cus_ana" });
-    expect(detail).not.toHaveProperty("licenses");
     expect(detail.subscriptions).toEqual([expect.objectContaining({ status: "active", live: true })]);
     expect(detail.sessions).toEqual([expect.objectContaining({ kind: "desktop", deviceName: "Test PC" })]);
     expect(detail.budgets).toEqual([expect.objectContaining({ id: "b1", revision: 1, size: 5, device: "Laptop" })]);

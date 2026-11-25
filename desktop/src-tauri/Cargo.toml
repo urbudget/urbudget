@@ -23,19 +23,9 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-csv = "1"
-rusqlite = { version = "0.38", features = ["bundled", "backup"] }
 chrono = { version = "0.4", features = ["serde"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-calamine = { version = "0.36.1", features = ["dates"] }
-rust_xlsxwriter = "0.99.1"
 base64 = "0.22"
-getrandom = "0.3"
 tokio = { version = "1", features = ["time", "sync"] }
-zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
-chacha20poly1305 = "0.11.0"
-argon2 = "0.6.0"
-flate2 = "1"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
@@ -45,10 +35,6 @@ tempfile = "3"
 # JSON and SQLite work in dependencies dominates run time; keep `npm run desktop` responsive.
 [profile.dev.package."*"]
 opt-level = 3
-
-# The Keychain (vault.rs).
-[target.'cfg(target_os = "macos")'.dependencies]
-security-framework = "3"
 
 # DPAPI seals the secrets' key, Credential Manager holds earlier versions' secrets (vault.rs).
 [target.'cfg(windows)'.dependencies]

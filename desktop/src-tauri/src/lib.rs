@@ -161,25 +161,6 @@ fn import_ynab_files(
 ) -> Result<Budget, String> {
     ynab_files::import_files(&files, date_order.as_deref(), &currency)
 }
-#[tauri::command(async)]
-fn prepare_captured_ynab(db: State<'_, Database>, path: String) -> Result<Budget, String> {
-    let directory = db
-        .store()?
-        .folder()
-        .join("imports")
-        .canonicalize()
-        .map_err(|e| e.to_string())?;
-    let path = std::path::PathBuf::from(path)
-        .canonicalize()
-        .map_err(|e| e.to_string())?;
-    if !path.starts_with(directory) {
-        return Err(urbudget_services::t!("Choose a downloaded YNAB export."));
-    }
-    ynab::import_export(
-        &serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?,
-    )
-}
 /// Saves YNAB's Register and Plan CSVs, with the full JSON, in a folder you name and returns its
 /// path (`None` when cancelled).
 #[tauri::command(async)]
@@ -527,10 +508,6 @@ fn source_loan_terms(
     db.read(patch, |b| loans::source_terms(b, &account_id))
 }
 
-#[tauri::command(async)]
-fn list_budgets(library: State<'_, Library>) -> Vec<budgets::Listing> {
-    library.lock().list()
-}
 /// Saves `budget` as a new budget file and returns its id. The open budget is unchanged.
 #[tauri::command(async)]
 fn create_budget(library: State<'_, Library>, db: State<'_, Database>, cloud: State<'_, cloud::Cloud>, budget: Budget, fresh_start_token: Option<String>, patch: Option<Patch>, local_only: Option<bool>) -> Result<String, String> {
@@ -555,28 +532,8 @@ fn create_budget(library: State<'_, Library>, db: State<'_, Database>, cloud: St
     catalog.mark_available(&id)?;drop(catalog);
     Ok(id)
 }
-/// Switches the window to another budget. The caller saves the open budget first.
-#[tauri::command(async)]
-async fn open_budget(
-    cloud: State<'_, cloud::Cloud>,
-    library: State<'_, Library>,
-    db: State<'_, Database>,
-    pending: State<'_, ynab_capture::PendingImport>,
-    id: String,
-) -> Result<serde_json::Value, String> {
-    let snapshot=urbudget_services::cloud::v2::open(&cloud,&db,&library,&id).await?;
-    if let Ok(mut review) = pending.0.lock() {
-        *review = None;
-    }
-    Ok(snapshot)
-}
-#[tauri::command(async)]
-async fn delete_budget(cloud:State<'_,cloud::Cloud>,db:State<'_,Database>,library: State<'_, Library>, id: String) -> Result<Vec<budgets::Listing>, String> {
-    urbudget_services::library_api::lifecycle(&cloud,&db,&library,"trash",&id).await?;
-    Ok(library.lock().list())
-}
-/// Shows a file in the system file manager; a phone, which has none, offers it to the share
-/// sheet instead. Only paths inside the app's data folder, and exports saved since it started.
+/// Shows a file in the system file manager. Only paths inside the app's data folder, and exports
+/// saved since it started.
 #[tauri::command(async)]
 fn reveal_path(library: State<'_, Library>, saved: State<'_, save::Saved>, path: String) -> Result<(), String> {
     let root = library
@@ -723,14 +680,10 @@ pub fn run() {
             record_loan_payment,
             import_ynab_export,
             import_ynab_files,
-            prepare_captured_ynab,
             export_ynab_csv,
             read_recovery,
             discard_recovery,
-            list_budgets,
             create_budget,
-            open_budget,
-            delete_budget,
             reveal_path,
             updates::restart_app,
             updates::update_channel,
@@ -749,9 +702,7 @@ pub fn run() {
             cloud::account_sign_out,
             cloud::account_open,
             cloud::account_delete,
-            cloud::sync::sync_status,
             cloud::sync::sync_now,
-            cloud::sync::sync_has_key,
             cloud::sync::sync_key_info,
             cloud::sync::sync_devices,
             cloud::sync::sync_setup,

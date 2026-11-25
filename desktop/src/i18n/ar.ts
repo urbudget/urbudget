@@ -241,8 +241,6 @@ export const ar: Catalog = {
     other: "{count} معاملة",
   },
   "Today": "اليوم",
-  "Yesterday": "أمس",
-  "Tomorrow": "غدًا",
   "Enter an amount like 12.50, or math like 10+2.50.": "أدخل مبلغًا مثل 12.50، أو عملية حسابية مثل 10+2.50.",
   "Amount is too large.": "المبلغ كبير جدًا.",
   "Let’s reopen your budget.": "لنُعِد فتح ميزانيتك.",

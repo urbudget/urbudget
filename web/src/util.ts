@@ -54,12 +54,6 @@ export function randomBelow(max: number): number {
 export async function sha256(s: string): Promise<string> {
   return hex(await crypto.subtle.digest("SHA-256", utf8(s)));
 }
-export async function hmacSha256(secret: string, message: string): Promise<string> {
-  const key = await crypto.subtle.importKey("raw", utf8(secret), { name: "HMAC", hash: "SHA-256" }, false, [
-    "sign",
-  ]);
-  return hex(await crypto.subtle.sign("HMAC", key, utf8(message)));
-}
 /** Compares two strings without leaking where they differ. */
 export function sameString(a: string, b: string): boolean {
   if (a.length !== b.length) return false;

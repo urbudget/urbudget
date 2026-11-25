@@ -1,7 +1,7 @@
 // Number, currency and date display for the open budget. Formatting is hand-rolled
 // (not Intl per call) because tables format thousands of amounts.
 import { today } from "./types";
-import { ltr, monthNames, stripIsolates, t, weekdayNames } from "./i18n";
+import { ltr, monthNames, stripIsolates, t } from "./i18n";
 export type NumberFormat = {
   decimal: "." | ",";
   group: "," | "." | " " | "'" | "";
@@ -176,25 +176,6 @@ export const monthName = (month: string, style: "long" | "short" = "long") => {
     year: "numeric",
   });
 };
-/** "2026-10-15" as a heading: "Today", "Yesterday", "Tomorrow", or "Thu, 15 Oct" (with the year when it isn't this one). */
-export function dayName(iso: string) {
-  const now = today();
-  if (iso === now) return t("Today");
-  if (iso === shiftDate(now, -1)) return t("Yesterday");
-  if (iso === shiftDate(now, 1)) return t("Tomorrow");
-  const months = monthNames(), weekdays = weekdayNames();
-  if (months && weekdays) {
-    const date = new Date(`${iso}T12:00:00`);
-    const year = iso.slice(0, 4) === now.slice(0, 4) ? "" : ` ${iso.slice(0, 4)}`;
-    return `${weekdays[date.getDay()]}، ${date.getDate()} ${months[date.getMonth()]}${year}`;
-  }
-  return new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    ...(iso.slice(0, 4) === now.slice(0, 4) ? {} : { year: "numeric" }),
-  });
-}
 /** "2026-10" to "October". */
 export const monthOnly = (month: string) =>
   monthNames()?.[Number(month.slice(5, 7)) - 1] ??

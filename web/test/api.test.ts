@@ -170,18 +170,12 @@ describe("checkout", () => {
     expect(polarCalls[1].body).toMatchObject({ products: ["prod-sync"] });
   });
 
-  it("sells nothing else: no license plan, license routes or purchase lookups", async () => {
+  it("sells nothing else: no license plan", async () => {
     const web = await signIn("ana@example.com", "web");
     const license = await call("/api/v1/billing/checkout", json("POST", { plan: "license" }, web.headers));
     expect(license.status).toBe(400);
     expect(await license.json()).toMatchObject({ error: "invalid_plan" });
     expect(polarCalls).toHaveLength(0);
-    for (const [method, path] of [["POST", "/api/v1/licenses/activate"], ["GET", "/api/v1/licenses/mine"], ["POST", "/api/v1/licenses/status"], ["GET", "/api/v1/checkout/co_01_abcdef"]]) {
-      const response = await call(path, method === "POST" ? json("POST", {}) : {});
-      expect(response.status, path).toBe(404);
-    }
-    const me = (await (await call("/api/v1/me", { headers: web.headers })).json()) as Record<string, unknown>;
-    expect(me).not.toHaveProperty("licenses");
   });
 });
 

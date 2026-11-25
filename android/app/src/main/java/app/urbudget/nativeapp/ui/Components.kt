@@ -104,13 +104,6 @@ internal fun SectionTitle(title: String, subtitle: String? = null, action: (@Com
     }
 }
 
-@Composable
-internal fun MoneyText(value: Long, currency: String, modifier: Modifier = Modifier, large: Boolean = false) {
-    Text(money(value, currency), modifier, color = if (value < 0) ur.negative else ur.text,
-        style = (if (large) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleMedium).merge(Tabular),
-        fontWeight = if (large) FontWeight.ExtraBold else FontWeight.SemiBold)
-}
-
 /** "Oct 2026 ⌄": tapping opens a sheet of months, as YNAB's month header does. */
 @Composable
 internal fun MonthSelector(month: String, onChange: (String) -> Unit) {

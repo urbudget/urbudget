@@ -8,7 +8,7 @@ vi.mock("../bridge", () => ({
 }));
 import { getLanguage, list, resolveLanguage, t, tn, useLanguage } from "./index";
 import { getPref, setPref } from "../prefs";
-import { dayName, deadline, formatDate, money, monthName, parseDate, evaluateAmount } from "../format";
+import { deadline, formatDate, money, monthName, parseDate, evaluateAmount } from "../format";
 import { SettingsPage } from "../SettingsPage";
 import { BudgetPage } from "../BudgetPage";
 import { ToastProvider } from "../ui";
@@ -94,8 +94,6 @@ describe("translation", () => {
     expect(monthName("2026-10")).toBe("أكتوبر 2026");
     expect(monthName("2026-01", "short")).toBe("يناير 2026");
     expect(deadline("2026-12-01")).toBe("1 ديسمبر");
-    expect(dayName(today())).toBe("اليوم");
-    expect(dayName(`${Number(today().slice(0, 4)) - 1}-02-05`)).toMatch(/^[؀-ۿ]+، 5 فبراير \d{4}$/);
   });
 
   it("makes a template's categories with the names the engine wrote, in its group order", () => {

@@ -88,13 +88,6 @@ internal fun wideWindow(): Boolean = windowWidth() >= MediumWidth
 internal val RailInsets: WindowInsets
     @Composable get() = WindowInsets.systemBars.union(WindowInsets.displayCutout)
 
-/** The width pages have: the window's, less the rail and any bar or cutout on its side. */
-@Composable
-internal fun pageRoom(rail: Boolean): Dp {
-    if (!rail) return windowWidth()
-    return windowWidth() - RailRoom - railStartInset()
-}
-
 /** A bar or cutout on the rail's side of the window. */
 @Composable
 internal fun railStartInset(): Dp = RailInsets.only(WindowInsetsSides.Start).asPaddingValues().calculateStartPadding(LocalLayoutDirection.current)

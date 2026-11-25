@@ -1029,10 +1029,6 @@ pub fn apply_fixes(b: &Budget, account: &str, content: &str, session: &Session, 
     }
     Ok(Applied { session: next, results })
 }
-/// What would become of changes to an import session, without making them.
-pub fn check_fixes(b: &Budget, account: &str, content: &str, session: &Session, fixes: &Fixes) -> Result<Vec<FixResult>, String> {
-    apply_fixes(b, account, content, session, fixes).map(|a| a.results)
-}
 /// A batch to be imported as one entry whose payments were imported one by one already.
 fn split_already(b: &Budget, account: &str, read: &Reading, structure: &Structure) -> Option<String> {
     let before: HashSet<&String> = read.statement.structure.whole_batches.iter().collect();

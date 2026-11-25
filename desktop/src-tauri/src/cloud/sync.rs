@@ -1,24 +1,14 @@
 //! Tauri adapters for the shared native services.
 use tauri::State;
 use serde_json::Value;
-pub use urbudget_services::cloud::sync::{Report, Status};
+pub use urbudget_services::cloud::sync::Report;
 use crate::{Database, Library};
 use crate::cloud::Cloud;
 use crate::sync_merge::Choices;
 
-#[tauri::command]
-pub fn sync_status(cloud: State<'_, Cloud>) -> Status {
-    urbudget_services::cloud::sync::sync_status(&cloud)
-}
-
 #[tauri::command(async)]
 pub async fn sync_now(cloud: State<'_, Cloud>, db: State<'_, Database>, library: State<'_, Library>, open_clean: bool) -> Result<Report, String> {
     urbudget_services::cloud::sync::sync_now(&cloud, &db, &library, open_clean).await
-}
-
-#[tauri::command(async)]
-pub async fn sync_has_key(cloud: State<'_, Cloud>) -> Result<bool, String> {
-    urbudget_services::cloud::sync::sync_has_key(&cloud).await
 }
 
 /// The devices that sync with the signed-in account, this one first.

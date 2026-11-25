@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { activeFormat, configureFormat, dayName, editableAmount, errorText, evaluateAmount, formatDate, money } from "./format";
+import { activeFormat, configureFormat, editableAmount, errorText, evaluateAmount, formatDate, money } from "./format";
 import { orderedGroups } from "./categories";
 import { rangeFor } from "./ui/DatePickers";
 import { today, type Category } from "./types";
@@ -113,14 +113,6 @@ describe("display formats", () => {
   });
 });
 
-describe("day headings", () => {
-  it("names the days near today and dates the rest", () => {
-    expect(dayName(today())).toBe("Today");
-    expect(dayName(shiftDate(today(), -1))).toBe("Yesterday");
-    expect(dayName(shiftDate(today(), 1))).toBe("Tomorrow");
-    expect(dayName("2020-03-05")).toBe("Thu, 5 Mar 2020");
-  });
-});
 
 describe("category order", () => {
   const cat = (id: string, group: string, hidden = false): Category => ({ id, name: id, group, target: 0, hidden });

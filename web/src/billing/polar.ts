@@ -175,4 +175,3 @@ export async function signWebhook(secret: string, id: string, timestamp: number,
   const mac = await crypto.subtle.sign("HMAC", key, utf8(`${id}.${timestamp}.${body}`));
   return `v1,${btoa(String.fromCharCode(...new Uint8Array(mac)))}`;
 }
-export const newWebhookSecret = () => `whsec_${base64url(crypto.getRandomValues(new Uint8Array(24)))}`;
