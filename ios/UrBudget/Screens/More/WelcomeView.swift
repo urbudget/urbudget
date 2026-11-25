@@ -84,10 +84,10 @@ struct WelcomeView: View {
                         }
                     }
                     Button { importing = true } label: {
-                        Label { rowText("Import UrBudget backup", "A JSON backup from desktop or Android") } icon: { Image(systemName: "square.and.arrow.down") }
+                        Label { rowText("Import UrBudget backup", "A JSON backup from UrBudget on another device") } icon: { Image(systemName: "square.and.arrow.down") }
                     }
                     NavigationLink { AccountSyncView() } label: {
-                        Label { rowText("Sign in and sync", "Bring down a budget you sync from desktop or Android") } icon: { Image(systemName: "icloud.and.arrow.down") }
+                        Label { rowText("Sign in and sync", "Bring down a budget you sync from another device") } icon: { Image(systemName: "icloud.and.arrow.down") }
                     }
                 }
                 .disabled(store.busy)

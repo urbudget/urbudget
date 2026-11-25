@@ -775,7 +775,7 @@ private struct MoveSyncSheet: View {
             try await submit(phrase)
         } content: {
             Section {
-                Text("After the move, every device that syncs with this account needs desktop 1.0.11 or later, Android 1.0.1 or later, or iPhone 1.0.1 or later. Older versions are told to update UrBudget before they sync again; the budgets on them stay.")
+                Text("After the move, every device that syncs with this account needs an up-to-date UrBudget (1.0.11 or later on a computer). Older versions are told to update UrBudget before they sync again; the budgets on them stay.")
                 if needsPassphrase { SecureField("Sync passphrase", text: $phrase).textContentType(.password) }
             }
         }

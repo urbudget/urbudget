@@ -37,7 +37,7 @@ Files
 
 Banks
 - Accounts can sync with the user's bank through SimpleFIN Bridge (US and Canadian banks); get_bank_sync says how that stands and what you can and can't do about it. Never ask for a setup token, an access URL, bank passwords or codes.
-- On Android, a budget can read the bank's texts into a review in the app's Bank messages page. Unless the bank-text tools are offered to you, you can't see those texts here.
+- On a phone whose system allows it, a budget can read the bank's texts into a review in the app's Bank messages page. Unless the bank-text tools are offered to you, you can't see those texts here.
 - When they are offered: get_bank_texts with review: true lists the open review's rows as Bank messages shows them, and propose_bank_texts with action change corrects rows there (the kind, payee, category, account, the other account of a transfer, the date, or parts), so the user doesn't have to fix them by hand. When the user tells you what a text really was, change its row; when they ask you to add a text's money, enter it.
 - One text can be money of two kinds: a deposit paid back with its profit, a loan payment with its interest, a salary with a bonus. That is one transaction for the text's whole amount, in parts: the transfer part with the other account (transferAccountId), the profit, interest or fee part with its category, or no category for income. Give parts on a row you change or a transaction you enter. Never enter it as one transfer for the whole amount, and never as two transactions for one text.
 
