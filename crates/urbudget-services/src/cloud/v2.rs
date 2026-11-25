@@ -1888,6 +1888,61 @@ mod reenroll_tests {
     }
 }
 
+/// Sync is on for a device that holds the account's key. Setting sync up, moving the account
+/// here, an approval and the recovery code each say so as they unlock (`setup_once`). A device
+/// that already synced on protocol 1 and follows a move made on another device unlocks by
+/// itself instead (`current_key`), and said nothing, so every budget it had stayed "paused"
+/// with no way to resume. A device that turned sync off keeps it off: only an unset flag turns on.
+fn turn_on_when_held(library: &Library, account: &str) -> Result<bool> {
+    let mut library = library.lock();
+    let mut state = library.account_state(account)?;
+    if !state["enabled"].is_null() {
+        return Ok(false);
+    }
+    state["enabled"] = json!(true);
+    library.set_account_state(account, &state)?;
+    Ok(true)
+}
+
+#[cfg(test)]
+mod turn_on_tests {
+    use super::*;
+
+    fn library(dir: &std::path::Path, state: Value) -> Library {
+        let mut catalog = budgets::Budgets::load(dir).unwrap();
+        catalog.ensure_account("account").unwrap();
+        let mut merged = catalog.account_state("account").unwrap();
+        for (k, v) in state.as_object().unwrap() {
+            merged[k] = v.clone();
+        }
+        catalog.set_account_state("account", &merged).unwrap();
+        Library(std::sync::Mutex::new(catalog))
+    }
+    fn enabled(library: &Library) -> Value {
+        library.lock().account_state("account").unwrap()["enabled"].clone()
+    }
+
+    #[test]
+    fn a_device_that_followed_a_move_elsewhere_turns_sync_on() {
+        // What a desktop that synced on protocol 1 saved after another device moved the account.
+        let dir = tempfile::tempdir().unwrap();
+        let library = library(dir.path(), json!({"protocol":2,"legacyAdopted":true,"registered":true}));
+        assert!(turn_on_when_held(&library, "account").unwrap());
+        assert_eq!(enabled(&library), json!(true));
+        let state = library.lock().account_state("account").unwrap();
+        assert_eq!(state["legacyAdopted"], json!(true), "the rest of the state is kept");
+        assert!(!turn_on_when_held(&library, "account").unwrap(), "once is enough");
+    }
+
+    #[test]
+    fn sync_turned_off_here_stays_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = library(dir.path(), json!({"protocol":2,"enabled":false}));
+        assert!(!turn_on_when_held(&library, "account").unwrap());
+        assert_eq!(enabled(&library), json!(false));
+    }
+}
+
 pub fn enroll_created(cloud: &Cloud, library: &Library, id: &str) -> Result<()> {
     let Some(account) = cloud.selected_account() else {
         return Ok(());
@@ -2843,6 +2898,9 @@ async fn run_inner(
     }
     let generation = string(&bootstrap, "keyGeneration")?;
     let key = current_key(cloud, &account, &generation, &bootstrap);
+    if key.is_some() {
+        turn_on_when_held(library, &account)?;
+    }
     let mut entry_errors = BTreeMap::new();
     // Before anything reads the catalog: a budget this device is to enroll again must not be
     // judged first by the identity the reset deleted.
