@@ -4,6 +4,14 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [1.0.16] - 2026-11-26
+
+This update gets sync going again on a computer that says "Sync paused" since your account moved to the new sync.
+
+### Fixed
+
+- A computer that already synced when another of your devices moved the account to the new sync showed "Sync paused" on every budget, with no way to resume it. After this update it syncs again by itself, and the changes it was holding upload.
+
 ## [1.0.15] - 2026-11-25
 
 This update brings sync without a passphrase, a guided setup for a new budget, and an assistant that can do more.
@@ -365,7 +373,11 @@ Also
 - Quick Assign's Underfunded now funds "maintain a balance" targets.
 - Notifications are easier to read in dark mode.
 
-[Unreleased]: https://github.com/urbudget/urbudget/compare/desktop-v1.0.12...HEAD
+[Unreleased]: https://github.com/urbudget/urbudget/compare/desktop-v1.0.16...HEAD
+[1.0.16]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.16
+[1.0.15]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.15
+[1.0.14]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.14
+[1.0.13]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.13
 [1.0.12]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.12
 [1.0.11]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.11
 [1.0.10]: https://github.com/urbudget/urbudget/releases/tag/desktop-v1.0.10
