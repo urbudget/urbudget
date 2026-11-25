@@ -143,6 +143,9 @@ try {
       await a.call("library_trash", { id: a.id }); await wake(a); await a.call("library_restore", { id: a.id }); await wake(a); await wake(b);
       // C was unlocked on v1 and never moved it: it adopts its saved key instead of asking for the passphrase.
       c.fault.legacy = false; await wake(c); assert.equal((await c.call("sync_status")).unlocked, true); const told = await wake(c);
+      // And it syncs: nothing it unlocked by itself is left "paused" with no way to resume.
+      assert.equal((await c.call("sync_status")).enabled, true);
+      assert.ok(!told.budgets.some(e => e.state === "paused"), JSON.stringify(told));
       const list = await snapshot(c), old = list.entries.find(e => e.id === oldIds.get(c)), current = list.entries.find(e => e.remoteId === a.remote);
       assert.equal(old.scope, "local"); assert.equal(old.accountId, null); assert.ok(current && current.id !== old.id, JSON.stringify(list));
       // A copy that can't be linked stays, and every pass says why on its row: never a silent fork.
