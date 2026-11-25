@@ -294,7 +294,8 @@ try {
   const first = await launch("Let's set up your budget");
   let cdp = first.cdp;
   const firstView = first.view;
-  assert(["Start fresh", "I'm coming from YNAB", "Look around first"].every(text => firstView.text.includes(text)), "First-run onboarding choices are missing.");
+  // The first screen of the setup walkthrough (1.0.15 on): one filled button and two quiet links.
+  assert(["Create my budget", "Look around a sample", "I already have a budget"].every(text => firstView.text.includes(text)), "First-run onboarding choices are missing.");
   assert(firstView.scripts.some(url => /\/assets\/.*\.js(?:\?|$)/.test(url)), "No bundled release JavaScript asset observed.");
   assert(!firstView.scripts.some(url => /@vite|\/src\//.test(url)), "Development script observed in installed release.");
   firstView.layout = await cdp.evaluate(`(() => {
