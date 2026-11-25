@@ -251,12 +251,12 @@
         }
       }
     },
-    "After the move, every device that syncs with this account needs desktop 1.0.11 or later, Android 1.0.1 or later, or iPhone 1.0.1 or later. Older versions are told to update UrBudget before they sync again; the budgets on them stay." : {
+    "After the move, every device that syncs with this account needs an up-to-date UrBudget (1.0.11 or later on a computer). Older versions are told to update UrBudget before they sync again; the budgets on them stay." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "بعد الانتقال، يحتاج كل جهاز يزامن هذا الحساب إلى الإصدار 1.0.11 أو أحدث على سطح المكتب، أو 1.0.1 أو أحدث على Android، أو 1.0.1 أو أحدث على iPhone. يُطلب من الإصدارات الأقدم تحديث UrBudget قبل أن تزامن مرة أخرى، وتبقى الميزانيات المحفوظة عليها."
+            "value" : "بعد الانتقال، يحتاج كل جهاز يزامن هذا الحساب إلى إصدار حديث من UrBudget (الإصدار 1.0.11 أو أحدث على الكمبيوتر). يُطلب من الإصدارات الأقدم تحديث UrBudget قبل أن تزامن مرة أخرى، وتبقى الميزانيات المحفوظة عليها."
           }
         }
       }
@@ -4430,22 +4430,22 @@
         }
       }
     },
-    "A JSON backup from desktop or Android" : {
+    "A JSON backup from UrBudget on another device" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "نسخة احتياطية بصيغة JSON من سطح المكتب أو Android"
+            "value" : "نسخة احتياطية بصيغة JSON من UrBudget على جهاز آخر"
           }
         }
       }
     },
-    "A UrBudget JSON budget from desktop or Android" : {
+    "A UrBudget JSON budget from another device" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ميزانية UrBudget بصيغة JSON من سطح المكتب أو Android"
+            "value" : "ميزانية UrBudget بصيغة JSON من جهاز آخر"
           }
         }
       }
@@ -6793,12 +6793,12 @@
         }
       }
     },
-    "Backups are portable: the same JSON opens on desktop and Android, and fields this app doesn't know are kept. Automatic backups and restores are in the budget library." : {
+    "Backups are portable: the same JSON opens in UrBudget on your other devices, and fields this app doesn't know are kept. Automatic backups and restores are in the budget library." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "النسخ الاحتياطية محمولة: ملف JSON نفسه يُفتح على سطح المكتب وAndroid، وتُحفظ الحقول التي لا يعرفها هذا التطبيق. أما النسخ الاحتياطية التلقائية والاستعادة ففي مكتبة الميزانيات."
+            "value" : "النسخ الاحتياطية محمولة: ملف JSON نفسه يُفتح في UrBudget على أجهزتك الأخرى، وتُحفظ الحقول التي لا يعرفها هذا التطبيق. أما النسخ الاحتياطية التلقائية والاستعادة ففي مكتبة الميزانيات."
           }
         }
       }
@@ -7254,12 +7254,12 @@
         }
       }
     },
-    "Bring down a budget you sync from desktop or Android" : {
+    "Bring down a budget you sync from another device" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "نزِّل ميزانية تزامنها من سطح المكتب أو Android"
+            "value" : "نزِّل ميزانية تزامنها من جهاز آخر"
           }
         }
       }

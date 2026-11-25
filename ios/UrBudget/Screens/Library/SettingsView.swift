@@ -224,13 +224,13 @@ struct SettingsView: View {
                 }
             }
             Button { importing = true } label: {
-                rowLabel(String(localized: "Import full backup"), String(localized: "A UrBudget JSON budget from desktop or Android"), "square.and.arrow.down")
+                rowLabel(String(localized: "Import full backup"), String(localized: "A UrBudget JSON budget from another device"), "square.and.arrow.down")
             }
             .disabled(store.busy)
         } header: {
             Text("Backups")
         } footer: {
-            Text("Backups are portable: the same JSON opens on desktop and Android, and fields this app doesn't know are kept. Automatic backups and restores are in the budget library.")
+            Text("Backups are portable: the same JSON opens in UrBudget on your other devices, and fields this app doesn't know are kept. Automatic backups and restores are in the budget library.")
         }
     }
 

@@ -275,10 +275,10 @@ ios: Go to **More** → **Import from YNAB**. For **YNAB account**, put your tok
 
 ## bank-texts: Bank texts (SMS)
 keywords: sms, text, texts, text messages, bank messages, bank texts, message, notification
-what: On Android, the app can read the texts your bank sends to this phone into a review of transactions. It's opt-in and only reads the senders you choose.
+what: On a phone whose system allows it, the app can read the texts your bank sends to the phone into a review of transactions. It's opt-in and only reads the senders you choose.
 desktop: Not available on desktop. Bank texts are read on an Android phone (More → Bank messages in the Android app); the transactions added there reach this computer with Sync.
 android: Set up: **More** → **Bank messages** → **Allow SMS access** → **Choose senders**. Tick your bank under **Banks and services**, set **Collect** (**New messages only**, **From a date** or **Everything on this phone**) and tap **Save**. With an assistant connected, tap the read button (**Allow** the first time), then **Review**. Tick what to add and tap the Add button, or **Later**. **Discard review** drops the review, and **Read new texts as they arrive** reads in the background. The assistant can also add a text's transaction straight to the budget: ask it in the chat (for example "add yesterday's card purchase") and tap **Add to budget** on its card; Bank messages then counts that text as handled. It can correct a row of the review too: tell it what a text really was (for example "the 501,900 from the bank is my deposit paid back, with 1,900 of profit") and tap **Change the review** on its card. The row then holds the money that came back as a transfer and the profit as income, for you to add. To stop, tap **Stop and clear messages** at the bottom and confirm.
-ios: Not available on iPhone. iOS doesn't let apps read text messages, so bank texts are read on an Android phone (More → Bank messages in the Android app); the transactions added there reach the iPhone with Sync.
+ios: Not available on iPhone: iOS doesn't let apps read text messages. Transactions added from bank texts on another device reach the iPhone with Sync.
 
 ## payees-rules: Payees and payee rules
 keywords: payee, payees, rule, rules, rename payee, merge payees, default category, import rule
@@ -351,7 +351,7 @@ keywords: trash, delete budget, restore budget, remove budget, empty trash, perm
 what: A deleted budget goes to Trash first, where it can be restored; deleting it from Trash is permanent.
 desktop: Click the budget name at the top of the sidebar → **Manage budgets…**, click the trash-can button beside a budget, and confirm with **Move to Trash**. Trashed budgets stay in that list marked **In Trash**, with **Restore** (or **Recover as a copy**). The desktop app can't delete a budget permanently or empty the Trash; the Android app can.
 android: In **Budget library**, long-press a budget → **Move to Trash** and confirm with **Move to Trash**. In the **Trash** section, long-press a budget → **Restore** (or **Recover as a new budget**). Budgets kept only on this phone can be removed with **Delete permanently** → **Delete permanently**. **Empty Trash** → **Empty Trash** deletes them all.
-ios: In the **Budget library**, swipe left on a budget → **Trash** (or long-press → **Move to Trash**) and confirm **Move to Trash**. The budget stays listed with the status **Trash**; long-press it → **Restore** (or **Recover as a new budget**). Deleting a budget permanently and emptying Trash aren't available on iPhone; the Android app can do both.
+ios: In the **Budget library**, swipe left on a budget → **Trash** (or long-press → **Move to Trash**) and confirm **Move to Trash**. The budget stays listed with the status **Trash**; long-press it → **Restore** (or **Recover as a new budget**). Deleting a budget permanently and emptying Trash aren't available on iPhone.
 
 ## backups: Backups
 keywords: backup, backups, restore, recover, retention, automatic backup, keep backups

@@ -2462,7 +2462,7 @@ fn show_in_app(args: &Value, ctx: &Context) -> Result<Outcome, String> {
         None => "budget",
     };
     if page == "bankMessages" && ctx.platform != super::guide::Platform::Android {
-        return Err("Bank messages is on the Android app only. Tell the user so.".into());
+        return Err("Bank messages isn't in this app. Tell the user so.".into());
     }
     // Each page takes what it can show; the rest would only mislead the card.
     let (month, categories) = if page == "budget" { (Some(month_arg(args, "month", ctx.month)?), categories) } else { (None, vec![]) };
