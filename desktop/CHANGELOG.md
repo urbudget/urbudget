@@ -4,15 +4,43 @@ Notable changes to UrBudget, organized using [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [1.0.15] - 2026-11-25
+
+This update brings sync without a passphrase, a guided setup for a new budget, and an assistant that can do more.
+
+- Sync without a passphrase: turning sync on makes a recovery code to keep, and a new device is added by scanning or typing a code from one that already syncs. Accounts with a passphrase keep it.
+- Account & sync is simpler, and lists the devices that sync with when each last synced.
+- Every budget syncs unless you keep it on this computer.
+- A new budget is set up in five short steps, from a choice of category templates, and ends with its money assigned.
+- The assistant can add and change accounts, delete categories, schedules and payee rules, and take you to what it's talking about.
+- On a Mac, the app draws its own title bar, dark in dark mode.
+
 ### Added
 
+- Sync without a passphrase. Turning sync on makes a recovery code, shown once and kept on this computer until you say it's saved. To add a device, choose Add a device on one that syncs: a phone scans the code it shows, with UrBudget or its own camera, and a computer has its 24 characters typed in. A computer that doesn't sync yet shows its own code for a phone that syncs to scan and approve. The recovery code unlocks a device when no other is at hand, and New recovery code makes another without a reset. An account that has a sync passphrase keeps it, and gains adding devices by code.
+- Account & sync lists the devices that sync with the account and when each last synced. A device a reset cut off leaves the list until it's added again, and says why it asks to unlock.
+- Setting up a new budget: after Create my budget, five short screens ask about your accounts, your categories (from a template, with any left out or added), what a month costs, the jobs for your money and how it will be kept up to date, and end with the money assigned. Skip setup leaves a setup card on Budget that picks up where you stopped, and New budget offers Set it up step by step. The first screen starts in this computer's currency and date format, with Look around a sample and I already have a budget (YNAB, a backup file, or sign in and sync).
+- Category templates wherever a budget is made: Everyday basics, Keep it simple, Family, Student, Self-employed, or No categories.
+- Send feedback in Settings › General › App starts an email to support@urbudget.app.
 - The assistant can do more in the budget, each as a card you apply: add an account (a bank account, cash, a card with its limit, or a tracking account), rename one, change its type, close it or open it again, set a card's credit limit, and correct a starting balance; delete a category with its history moved to another; delete a scheduled transaction; and remove a payee rule.
 - The assistant can take you to what it's talking about. It opens the page, the month with its categories marked, an account's transactions, or the transactions it found, selected. The window goes there as the reply arrives, and the card's Show in the app goes back to it.
 - Bank texts on Android: one text can be a transaction in parts, such as a deposit paid back with its profit: the money back is a transfer from the deposit's account and the profit is income. The reading gives the parts when a text or your note has the figures, and the assistant in chat can list the open review's rows and change one.
 
 ### Changed
 
+- Every budget syncs unless it's kept on this computer (New budget's option). A budget made before sync was turned on now uploads too.
+- Account & sync is one short page: the account, one line saying how sync is with Sync now, the devices, only the budgets that need something, and the rest under More.
+- Resetting sync puts this computer's budgets back into sync by itself. Other devices keep their copies to recover, as before.
 - The assistant can propose deleting transactions it found for you, not only ones you attached to your message. The card still lists each one, and nothing goes until you confirm.
+- Assign money opens with no amount, and says how much is unassigned. The setup card's Assign your money step is done when nothing is left unassigned.
+- Settings and the assistant say Unassigned, as the budget does, instead of Ready to Assign. How this works is a row in Settings › General › App.
+- A budget made from New budget, or synced from another device, gets the setup card too while it still needs setting up. Its unused categories can be left out in step 2.
+- On a Mac, the app draws its own title bar, as on Windows, so it's dark in dark mode. Settings rows are evened out, and "Install updates by themselves" is "Auto update".
+
+### Fixed
+
+- On a Mac, the Settings tabs jumped sideways when a page started or stopped scrolling.
+- The first launch's new budget and sample started in Saudi riyals and ISO dates whatever the computer's region; they start in this computer's currency and formats.
 
 ## [1.0.14] - 2026-11-22
 
